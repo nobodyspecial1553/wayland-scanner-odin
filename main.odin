@@ -3,6 +3,7 @@ package ns_wayland_scanner_odin
 @(require) import "core:fmt"
 @(require) import "core:log"
 @(require) import "core:mem"
+import os "core:os/os2"
 
 main :: proc() {
 	context.logger = log.create_console_logger(.Debug when ODIN_DEBUG else .Info)
@@ -32,11 +33,46 @@ main :: proc() {
 		}
 	}
 
-	Test_Value :: 4
-	Test :: enum {
-		A = log2(Test_Value),
+	args := parse_args(os.args)
+
+	/*
+	xml_lexer: XML_Lexer
+	xml_lexer_init(&xml_lexer)
+
+	for {
+		xml_token := xml_lexer_token_next
+		fmt.printfln("Token Type: %v", xml_token.type)
+	}
+	*/
+}
+
+Args :: struct {
+	file_path_in_array: []string,
+}
+
+@(require_results)
+parse_args :: proc(
+	arg_array: []string,
+	allocator := context.allocator,
+) -> (
+	args: Args,
+	allocator_error: mem.Allocator_Error
+) #optional_allocator_error {
+	@(require_results)
+	arg_pop_next :: proc "contextless" (arg_array: ^[]string) -> (arg: string) {
+		arg = arg_array[0]
+		arg_array^ = arg_array[1:]
+		return
 	}
 
-	log.info("Hellope!")
-	log.info(cast(int)Test.A)
+	arg_array := arg_array
+
+	assert(arg_array != nil)
+
+	for len(arg_array) > 0 {
+		arg := arg_pop_next(&arg_array)
+		fmt.printfln("Arg: %v", arg)
+	}
+
+	return args, nil
 }
