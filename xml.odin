@@ -17,16 +17,17 @@ XML_Error :: union #shared_nil {
 
 XML_Token_Error :: enum {
 	None = 0,
+	Invalid_Token,
 }
 
 XML_Token_Type :: enum {
 	Invalid = 0,
 	Angle_Bracket_Left,
-	Angle_Bracket_Left_Close, // </example>
 	Angle_Bracket_Right,
-	Angle_Bracket_Right_Close, // <example />
-	Angle_Bracket_Declaration, // <?xml ...
-	Angle_Bracket_Declaration_Close, // ... ?>
+	Forward_Slash,
+	Exclamation,
+	Question,
+	Equals,
 	String,
 	Identifier,
 }

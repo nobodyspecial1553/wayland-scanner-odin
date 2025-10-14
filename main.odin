@@ -4,6 +4,8 @@ package ns_wayland_scanner_odin
 @(require) import "core:log"
 @(require) import "core:mem"
 import os "core:os/os2"
+import "core:io"
+import "core:bufio"
 
 main :: proc() {
 	context.logger = log.create_console_logger(.Debug when ODIN_DEBUG else .Info)
@@ -33,21 +35,76 @@ main :: proc() {
 		}
 	}
 
-	args := parse_args(os.args)
+	{
+		scratch: mem.Scratch
+		scratch_allocator: mem.Allocator
 
-	/*
-	xml_lexer: XML_Lexer
-	xml_lexer_init(&xml_lexer)
+		args_allocator_error: mem.Allocator_Error
+		args: Args
 
-	for {
-		xml_token := xml_lexer_token_next
-		fmt.printfln("Token Type: %v", xml_token.type)
+		buffered_reader: bufio.Reader
+
+		mem.scratch_init(&scratch, mem.Megabyte)
+		scratch_allocator = mem.scratch_allocator(&scratch)
+
+		args, args_allocator_error = parse_args(os.args)
+		if args_allocator_error != nil {
+			log.fatalf("Args Parsing Allocator Error: %v", args_allocator_error)
+		}
+		defer delete(args.file_path_in_array)
+
+		bufio.reader_init(&buffered_reader, {}, mem.Megabyte)
+		defer bufio.reader_destroy(&buffered_reader)
+
+		for file_path_in in args.file_path_in_array {
+			file: ^os.File
+			file_open_error: os.Error
+
+			buffered_stream: io.Reader
+
+			xml_lexer: XML_Lexer
+
+			file, file_open_error = os.open(file_path_in)
+			if file_open_error != nil {
+				fmt.eprintfln("Failed to open file '%s': %v", file_open_error)
+				os.exit(1)
+			}
+			defer os.close(file)
+
+			bufio.reader_reset(&buffered_reader, file.stream)
+			buffered_stream = bufio.reader_to_stream(&buffered_reader)
+
+			xml_lexer_init(&xml_lexer, buffered_stream, scratch_allocator)
+
+			parser_loop: for {
+				xml_token: XML_Token
+				xml_token_error: XML_Error
+
+				xml_token, xml_token_error = xml_lexer_token_next(&xml_lexer)
+				switch error in xml_token_error {
+				case io.Error:
+					#partial switch error {
+					case .EOF, .Unexpected_EOF:
+						break parser_loop
+					}
+				case XML_Token_Error:
+				case nil:
+				}
+				fmt.printfln("Token Type: %v", xml_token.type)
+			}
+		}
 	}
-	*/
 }
+
+Args_Property :: enum {
+	No_FFI = 0,
+}
+Args_Property_Flags :: bit_set[Args_Property]
 
 Args :: struct {
 	file_path_in_array: []string,
+	file_path_out: string,
+	property_flags: Args_Property_Flags,
 }
 
 @(require_results)
@@ -59,20 +116,70 @@ parse_args :: proc(
 	allocator_error: mem.Allocator_Error
 ) #optional_allocator_error {
 	@(require_results)
-	arg_pop_next :: proc "contextless" (arg_array: ^[]string) -> (arg: string) {
+	arg_pop_next :: #force_inline proc "contextless" (arg_array: ^[]string) -> (arg: string, ok: bool) #optional_ok {
+		if len(arg_array^) == 0 {
+			return "", false
+		}
 		arg = arg_array[0]
 		arg_array^ = arg_array[1:]
-		return
+		return arg, true
 	}
+
+	file_path_in_array: [dynamic]string
 
 	arg_array := arg_array
 
+	context.allocator = allocator
+	context.temp_allocator = mem.panic_allocator()
+
 	assert(arg_array != nil)
 
+	file_path_in_array = make([dynamic]string, 0, len(arg_array), allocator) or_return
+
 	for len(arg_array) > 0 {
-		arg := arg_pop_next(&arg_array)
-		fmt.printfln("Arg: %v", arg)
+		arg: string
+
+		arg = arg_pop_next(&arg_array)
+
+		switch arg {
+		case "-o":
+			args.file_path_out = arg_pop_next(&arg_array) or_break
+		case "-ffi":
+			args.property_flags -= { .No_FFI }
+		case "-no-ffi":
+			args.property_flags += { .No_FFI }
+		case "-h":
+			print_help()
+		case:
+			if arg[0] == '-' {
+				fmt.eprintfln("'%s' is not a valid flag!", arg)
+				os.exit(1)
+			}
+			append(&file_path_in_array, arg)
+		}
 	}
 
+	if len(file_path_in_array) == 0 {
+		delete(file_path_in_array)
+		print_help()
+	}
+
+	args.file_path_in_array = file_path_in_array[:]
+
 	return args, nil
+}
+
+print_help :: proc() -> ! {
+	fmt.printfln(`Usage: %s [options] [-o output_file_path] <input file paths>
+
+%s is a tool for generating odin code from wayland protocol xml files
+
+[Flags]:
+	-o <output_file_path>: Sets the output path (appends .odin if it isn't present)
+	-ffi (default): Generates odin ffi linked against 'system:wayland-(client/server)'
+	-no-ffi: Disables ffi generation, useful if generating each protocol file individually
+	-h: Prints help message and exits`, os.args[0], os.args[0]
+	)
+
+	os.exit(0)
 }
