@@ -39,6 +39,9 @@ main :: proc() {
 		scratch: mem.Scratch
 		scratch_allocator: mem.Allocator
 
+		string_arena: mem.Dynamic_Arena
+		string_allocator: mem.Allocator
+
 		args_allocator_error: mem.Allocator_Error
 		args: Args
 
@@ -47,7 +50,10 @@ main :: proc() {
 		mem.scratch_init(&scratch, mem.Megabyte)
 		scratch_allocator = mem.scratch_allocator(&scratch)
 
-		args, args_allocator_error = parse_args(os.args)
+		mem.dynamic_arena_init(&string_arena)
+		string_allocator = mem.dynamic_arena_allocator(&string_arena)
+
+		args, args_allocator_error = parse_args(os.args, string_allocator)
 		if args_allocator_error != nil {
 			log.fatalf("Args Parsing Allocator Error: %v", args_allocator_error)
 		}
@@ -74,7 +80,7 @@ main :: proc() {
 			bufio.reader_reset(&buffered_reader, file.stream)
 			buffered_stream = bufio.reader_to_stream(&buffered_reader)
 
-			xml_lexer_init(&xml_lexer, buffered_stream, scratch_allocator)
+			xml_lexer_init(&xml_lexer, buffered_stream, string_allocator, scratch_allocator)
 
 			parser_loop: for {
 				xml_token: XML_Token
@@ -88,9 +94,10 @@ main :: proc() {
 						break parser_loop
 					}
 				case XML_Token_Error:
+					break parser_loop
 				case nil:
 				}
-				fmt.printfln("Token Type: %v", xml_token.type)
+				fmt.printfln("Token Type: %v; Lexeme: '%s'", xml_token.type, xml_token.lexeme)
 			}
 		}
 	}
@@ -136,6 +143,7 @@ parse_args :: proc(
 
 	file_path_in_array = make([dynamic]string, 0, len(arg_array), allocator) or_return
 
+	_ = arg_pop_next(&arg_array)
 	for len(arg_array) > 0 {
 		arg: string
 
