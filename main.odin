@@ -120,7 +120,7 @@ parse_args :: proc(
 	allocator := context.allocator,
 ) -> (
 	args: Args,
-	allocator_error: mem.Allocator_Error
+	allocator_error: mem.Allocator_Error,
 ) #optional_allocator_error {
 	@(require_results)
 	arg_pop_next :: #force_inline proc "contextless" (arg_array: ^[]string) -> (arg: string, ok: bool) #optional_ok {
@@ -186,7 +186,7 @@ print_help :: proc() -> ! {
 	-o <output_file_path>: Sets the output path (appends .odin if it isn't present)
 	-ffi (default): Generates odin ffi linked against 'system:wayland-(client/server)'
 	-no-ffi: Disables ffi generation, useful if generating each protocol file individually
-	-h: Prints help message and exits`, os.args[0], os.args[0]
+	-h: Prints help message and exits`, os.args[0], os.args[0],
 	)
 
 	os.exit(0)

@@ -33,21 +33,6 @@ XML_Token_Type :: enum {
 	Identifier,
 }
 
-@(rodata)
-xml_token_type_string_array := [XML_Token_Type]string {
-	.Unknown = "",
-	.Whitespace = "",
-	.Angle_Bracket_Left = "<",
-	.Angle_Bracket_Right = ">",
-	.Forward_Slash = "/",
-	.Exclamation = "!",
-	.Question = "?",
-	.Hyphen = "-",
-	.Equals = "=",
-	.Double_Quotation = "\"",
-	.Identifier = "",
-}
-
 XML_Token :: struct {
 	type: XML_Token_Type,
 	lexeme: string,
@@ -76,15 +61,6 @@ xml_lexer_init :: proc(
 
 @(require_results)
 xml_lexer_token_next :: proc(lexer: ^XML_Lexer) -> (token: XML_Token, error: XML_Error) {
-	@(require_results)
-	is_ws :: #force_inline proc "contextless" (r: rune) -> (ok: bool) {
-		switch r {
-		case ' ', '\t', '\r', '\n':
-			return true
-		}
-		return false
-	}
-
 	read_rune :: #force_inline proc(lexer: ^XML_Lexer) -> (r: rune, r_size: int, error: io.Error) {
 		r, r_size, error = io.read_rune(lexer.reader)
 		lexer.r = r
@@ -92,28 +68,74 @@ xml_lexer_token_next :: proc(lexer: ^XML_Lexer) -> (token: XML_Token, error: XML
 		return
 	}
 
-	parse_rune :: proc(r: rune) -> (token_type: XML_Token_Type) {
+	@(require_results)
+	parse_rune :: proc(r: rune) -> (token: XML_Token) {
 		switch r {
-		case ' ', '\t', '\r', '\n':
-			return .Whitespace
+		case ' ':
+			return {
+				type = .Whitespace,
+				lexeme = " ",
+			}
+		case '\t':
+			return {
+				type = .Whitespace,
+				lexeme = "\t",
+			}
+		case '\r':
+			return {
+				type = .Whitespace,
+				lexeme = "\r",
+			}
+		case '\n':
+			return {
+				type = .Whitespace,
+				lexeme = "\n",
+			}
 		case '<':
-			return .Angle_Bracket_Left
+			return {
+				type = .Angle_Bracket_Left,
+				lexeme = "<",
+			}
 		case '>':
-			return .Angle_Bracket_Right
+			return {
+				type = .Angle_Bracket_Right,
+				lexeme = ">",
+			}
 		case '/':
-			return .Forward_Slash
+			return {
+				type = .Forward_Slash,
+				lexeme = "/",
+			}
 		case '!':
-			return .Exclamation
+			return {
+				type = .Exclamation,
+				lexeme = "!",
+			}
 		case '?':
-			return .Question
+			return {
+				type = .Question,
+				lexeme = "?",
+			}
 		case '-':
-			return .Hyphen
+			return {
+				type = .Hyphen,
+				lexeme = "-",
+			}
 		case '=':
-			return .Equals
+			return {
+				type = .Equals,
+				lexeme = "=",
+			}
 		case '"':
-			return .Double_Quotation
+			return {
+				type = .Double_Quotation,
+				lexeme = "\"",
+			}
 		}
-		return .Unknown
+		return {
+			type = .Unknown,
+			lexeme = "",
+		}
 	}
 
 	context.allocator = mem.panic_allocator()
@@ -125,7 +147,7 @@ xml_lexer_token_next :: proc(lexer: ^XML_Lexer) -> (token: XML_Token, error: XML
 		read_rune(lexer) or_return
 	}
 
-	token.type = parse_rune(lexer.r)
+	token = parse_rune(lexer.r)
 	#partial switch token.type {
 	case .Unknown:
 		string_builder: strings.Builder
@@ -137,7 +159,7 @@ xml_lexer_token_next :: proc(lexer: ^XML_Lexer) -> (token: XML_Token, error: XML
 
 			strings.write_rune(&string_builder, lexer.r)
 			r, _ = read_rune(lexer) or_return
-			#partial switch parse_rune(r) {
+			#partial switch parse_rune(r).type {
 			case .Unknown:
 				continue
 			case:
@@ -149,22 +171,66 @@ xml_lexer_token_next :: proc(lexer: ^XML_Lexer) -> (token: XML_Token, error: XML
 			type = .Identifier,
 			lexeme = strings.clone(strings.to_string(string_builder), lexer.string_allocator),
 		}
-	case .Whitespace:
-		switch lexer.r {
-		case ' ':
-			token.lexeme = " "
-		case '\t':
-			token.lexeme = "\t"
-		case '\r':
-			token.lexeme = "\r"
-		case '\n':
-			token.lexeme = "\n"
-		}
-		read_rune(lexer)
-	case:
-		token.lexeme = xml_token_type_string_array[token.type]
-		read_rune(lexer)
 	}
 
 	return token, nil
+}
+
+XML_Parser_Protocol :: struct {
+	name: string,
+	copyright: ^XML_Parser_Copyright,
+	interface_list: ^XML_Parser_Interface,
+}
+
+XML_Parser_Copyright :: struct {
+	content: string,
+}
+
+XML_Parser_Interface :: struct {
+	next: ^XML_Parser_Interface,
+	name: string,
+	version: int,
+	description: ^XML_Parser_Description,
+	event_list: ^XML_Parser_Event,
+	request_list: ^XML_Parser_Request,
+	enum_list: ^XML_Parser_Enum,
+}
+
+XML_Parser_Description :: struct {
+	summary: string,
+	content: string,
+}
+
+XML_Parser_Event :: struct {
+	next: ^XML_Parser_Event,
+	name: string,
+	since: Maybe(int),
+	description: ^XML_Parser_Description,
+	arg_list: ^XML_Parser_Event_Arg,
+}
+XML_Parser_Request :: XML_Parser_Event
+
+XML_Parser_Event_Arg :: struct {
+	next: ^XML_Parser_Arg,
+	name: string,
+	type: string,
+	summary: string,
+	since: Maybe(int),
+}
+XML_Parser_Request_Arg :: XML_Parser_Event_Arg
+
+XML_Parser_Enum :: struct {
+	next: ^XML_Parser_Enum
+	name: string,
+	since: Maybe(int),
+	bitfield: bool,
+	description: ^XML_Parser_Description,
+	entry_list: ^XML_Parser_Enum_Entry,
+}
+
+XML_Parser_Enum_Entry :: struct {
+	next: ^XML_Parser_Enum_Entry,
+	name: string,
+	summary: string,
+	value: int
 }
