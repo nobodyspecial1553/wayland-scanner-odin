@@ -70,6 +70,9 @@ main :: proc() {
 
 			xml_lexer: XML_Lexer
 
+			protocol: XML_Parser_Protocol
+			xml_parse_error: XML_Error
+
 			file, file_open_error = os.open(file_path_in)
 			if file_open_error != nil {
 				fmt.eprintfln("Failed to open file '%s': %v", file_open_error)
@@ -82,22 +85,9 @@ main :: proc() {
 
 			xml_lexer_init(&xml_lexer, buffered_stream, string_allocator, scratch_allocator)
 
-			parser_loop: for {
-				xml_token: XML_Token
-				xml_token_error: XML_Error
-
-				xml_token, xml_token_error = xml_lexer_token_next(&xml_lexer)
-				switch error in xml_token_error {
-				case io.Error:
-					#partial switch error {
-					case .EOF, .Unexpected_EOF:
-						break parser_loop
-					}
-				case XML_Token_Error:
-					break parser_loop
-				case nil:
-				}
-				fmt.printfln("Token Type: %v; Lexeme: '%s'", xml_token.type, xml_token.lexeme)
+			protocol, xml_parse_error = xml_parse(&xml_lexer, string_allocator, scratch_allocator)
+			if xml_parse_error != nil {
+				log.panicf("Failed to parse: %v", xml_parse_error)
 			}
 		}
 	}
