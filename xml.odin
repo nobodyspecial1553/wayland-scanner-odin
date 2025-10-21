@@ -512,6 +512,7 @@ xml_parse_attribute :: proc(
 	scratch_allocator := context.temp_allocator,
 ) -> (
 	attribute: XML_Parser_Attribute,
+	attribute_found: bool, // Important to check, error can be nil, but no attribute found!
 	error: XML_Error,
 ) {
 	context.allocator = arena_allocator
@@ -519,5 +520,32 @@ xml_parse_attribute :: proc(
 
 	assert(lexer != nil)
 
-	return attribute, nil
+	attribute_parse_loop: for {
+		token: XML_Token
+
+		token = xml_parse_skip_ws(lexer) or_return
+
+		#partial switch token.type {
+		case .Forward_Slash:
+			token = xml_parse_skip_ws(lexer) or_return
+			if token.type != .Angle_Bracket_Right {
+				xml_parse_print_error_expected(lexer, ">", token.lexeme)
+				return {}, false, XML_Parse_Error.Unexpected_Token
+			}
+			fallthrough
+		case .Angle_Bracket_Right:
+			break attribute_parse_loop
+		case .Identifier:
+			// TODO
+		case:
+			token_type_as_string: string
+
+			token_type_as_string = fmt.tprintf("%v", token.type)
+			xml_parse_print_error_expected(lexer, "Identifier", token_type_as_string)
+
+			return {}, false, XML_Parse_Error.Unexpected_Token
+		}
+	}
+
+	return attribute, true, nil
 }
