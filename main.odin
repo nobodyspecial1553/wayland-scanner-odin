@@ -36,8 +36,11 @@ main :: proc() {
 	}
 
 	{
-		scratch: mem.Scratch
-		scratch_allocator: mem.Allocator
+		lexer_scratch: mem.Scratch
+		lexer_scratch_allocator: mem.Allocator
+
+		parser_scratch: mem.Scratch
+		parser_scratch_allocator: mem.Allocator
 
 		string_arena: mem.Dynamic_Arena
 		string_allocator: mem.Allocator
@@ -47,17 +50,22 @@ main :: proc() {
 
 		buffered_reader: bufio.Reader
 
-		mem.scratch_init(&scratch, mem.Megabyte)
-		scratch_allocator = mem.scratch_allocator(&scratch)
+		mem.scratch_init(&lexer_scratch, mem.Megabyte)
+		lexer_scratch_allocator = mem.scratch_allocator(&lexer_scratch)
+		defer mem.scratch_destroy(&lexer_scratch)
+
+		mem.scratch_init(&parser_scratch, mem.Megabyte)
+		parser_scratch_allocator = mem.scratch_allocator(&parser_scratch)
+		defer mem.scratch_destroy(&parser_scratch)
 
 		mem.dynamic_arena_init(&string_arena)
 		string_allocator = mem.dynamic_arena_allocator(&string_arena)
+		defer mem.dynamic_arena_destroy(&string_arena)
 
 		args, args_allocator_error = parse_args(os.args, string_allocator)
 		if args_allocator_error != nil {
 			log.fatalf("Args Parsing Allocator Error: %v", args_allocator_error)
 		}
-		defer delete(args.file_path_in_array)
 
 		bufio.reader_init(&buffered_reader, {}, mem.Megabyte)
 		defer bufio.reader_destroy(&buffered_reader)
@@ -83,10 +91,18 @@ main :: proc() {
 			bufio.reader_reset(&buffered_reader, file.stream)
 			buffered_stream = bufio.reader_to_stream(&buffered_reader)
 
-			xml_lexer_init(&xml_lexer, buffered_stream, string_allocator, scratch_allocator)
+			xml_lexer_init(&xml_lexer, buffered_stream, string_allocator, lexer_scratch_allocator)
 
-			protocol, xml_parse_error = xml_parse(&xml_lexer, string_allocator, scratch_allocator)
-			if xml_parse_error != nil {
+			protocol, xml_parse_error = xml_parse(&xml_lexer, string_allocator, parser_scratch_allocator)
+			#partial switch xml_parse_error_variant in xml_parse_error {
+			case io.Error:
+				#partial switch xml_parse_error_variant {
+				case .EOF, .Unexpected_EOF:
+					break
+				case:
+					log.panicf("Failed to parse: %v", xml_parse_error)
+				}
+			case:
 				log.panicf("Failed to parse: %v", xml_parse_error)
 			}
 		}
