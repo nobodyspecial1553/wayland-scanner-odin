@@ -105,6 +105,10 @@ main :: proc() {
 			case:
 				log.panicf("Failed to parse: %v", xml_parse_error)
 			}
+
+			for interface := protocol.interface_list; interface != nil; interface = interface.next {
+				fmt.printfln("Interface: %v\n\n", interface^)
+			}
 		}
 	}
 }
