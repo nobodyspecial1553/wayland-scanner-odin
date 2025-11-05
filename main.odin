@@ -50,6 +50,11 @@ main :: proc() {
 
 		buffered_reader: bufio.Reader
 
+		output_file: ^os.File
+		output_file_open_error: os.Error
+		buffered_output_writer: bufio.Writer
+		buffered_output_stream: io.Writer
+
 		mem.scratch_init(&lexer_scratch, mem.Megabyte)
 		lexer_scratch_allocator = mem.scratch_allocator(&lexer_scratch)
 		defer mem.scratch_destroy(&lexer_scratch)
@@ -67,6 +72,23 @@ main :: proc() {
 			log.fatalf("Args Parsing Allocator Error: %v", args_allocator_error)
 		}
 
+		output_file, output_file_open_error = os.open(args.file_path_out, { .Write, .Create, .Trunc }, 0o666)
+		if output_file_open_error != nil {
+			fmt.eprintfln("Failed to open file \"%s\": %v", args.file_path_out, output_file_open_error)
+			os.exit(1)
+		}
+		defer os.close(output_file)
+
+		bufio.writer_init(&buffered_output_writer, output_file.stream, mem.Megabyte)
+		defer {
+			bufio.writer_flush(&buffered_output_writer)
+			bufio.writer_destroy(&buffered_output_writer)
+		}
+		buffered_output_stream = bufio.writer_to_stream(&buffered_output_writer)
+
+		output_write_header(buffered_output_stream)
+		output_write_ffi(buffered_output_stream, args)
+
 		bufio.reader_init(&buffered_reader, {}, mem.Megabyte)
 		defer bufio.reader_destroy(&buffered_reader)
 
@@ -83,7 +105,7 @@ main :: proc() {
 
 			file, file_open_error = os.open(file_path_in)
 			if file_open_error != nil {
-				fmt.eprintfln("Failed to open file '%s': %v", file_open_error)
+				fmt.eprintfln("Failed to open file \"%s\": %v", file_open_error)
 				os.exit(1)
 			}
 			defer os.close(file)
@@ -102,12 +124,10 @@ main :: proc() {
 				case:
 					log.panicf("Failed to parse: %v", xml_parse_error)
 				}
+			case nil:
+				break
 			case:
 				log.panicf("Failed to parse: %v", xml_parse_error)
-			}
-
-			for interface := protocol.interface_list; interface != nil; interface = interface.next {
-				fmt.printfln("Interface: %v\n\n", interface^)
 			}
 		}
 	}
@@ -115,6 +135,7 @@ main :: proc() {
 
 Args_Property :: enum {
 	No_FFI = 0,
+	Is_Server,
 }
 Args_Property_Flags :: bit_set[Args_Property]
 
@@ -151,6 +172,8 @@ parse_args :: proc(
 
 	assert(arg_array != nil)
 
+	args.file_path_out = "wayland.odin"
+
 	file_path_in_array = make([dynamic]string, 0, len(arg_array), allocator) or_return
 
 	_ = arg_pop_next(&arg_array)
@@ -166,6 +189,10 @@ parse_args :: proc(
 			args.property_flags -= { .No_FFI }
 		case "-no-ffi":
 			args.property_flags += { .No_FFI }
+		case "-client":
+			args.property_flags -= { .Is_Server }
+		case "-server":
+			args.property_flags += { .Is_Server }
 		case "-h":
 			print_help()
 		case:
@@ -196,8 +223,9 @@ print_help :: proc() -> ! {
 	-o <output_file_path>: Sets the output path (appends .odin if it isn't present)
 	-ffi (default): Generates odin ffi linked against 'system:wayland-(client/server)'
 	-no-ffi: Disables ffi generation, useful if generating each protocol file individually
-	-h: Prints help message and exits`, os.args[0], os.args[0],
-	)
+	-client (default): Generates wayland client odin file
+	-server: Generates wayland server odin file
+	-h: Prints help message and exits`, os.args[0], os.args[0])
 
 	os.exit(0)
 }

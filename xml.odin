@@ -212,7 +212,7 @@ XML_Parser_Unknown :: struct {
 XML_Parser_Protocol :: struct {
 	name: string,
 	copyright: ^XML_Parser_Copyright,
-	interface_list: ^XML_Parser_Interface,
+	interface: ^XML_Parser_Interface,
 }
 
 XML_Parser_Copyright :: struct {
@@ -224,9 +224,9 @@ XML_Parser_Interface :: struct {
 	name: string,
 	version: int,
 	description: ^XML_Parser_Description,
-	event_list: ^XML_Parser_Event,
-	request_list: ^XML_Parser_Request,
-	enum_list: ^XML_Parser_Enum,
+	event: ^XML_Parser_Event,
+	request: ^XML_Parser_Request,
+	_enum: ^XML_Parser_Enum,
 }
 
 XML_Parser_Description :: struct {
@@ -238,16 +238,30 @@ XML_Parser_Proc :: struct {
 	name: string,
 	type: string,
 	since: Maybe(int),
+	deprecated_since: Maybe(int),
 	description: ^XML_Parser_Description,
-	arg_list: ^XML_Parser_Arg,
+	arg: ^XML_Parser_Arg,
 }
+// TODO: Return to using version
 XML_Parser_Event :: struct {
 	next: ^XML_Parser_Event,
-	using _: XML_Parser_Proc,
+	//using _proc: XML_Parser_Proc,
+	name: string,
+	type: string,
+	since: Maybe(int),
+	deprecated_since: Maybe(int),
+	description: ^XML_Parser_Description,
+	arg: ^XML_Parser_Arg,
 }
 XML_Parser_Request :: struct {
 	next: ^XML_Parser_Request,
-	using _: XML_Parser_Proc,
+	//using _proc: XML_Parser_Proc,
+	name: string,
+	type: string,
+	since: Maybe(int),
+	deprecated_since: Maybe(int),
+	description: ^XML_Parser_Description,
+	arg: ^XML_Parser_Arg,
 }
 
 XML_Parser_Arg :: struct {
@@ -257,16 +271,19 @@ XML_Parser_Arg :: struct {
 	summary: string,
 	interface: string,
 	_enum: string,
+	allow_null: bool,
 	since: Maybe(int),
+	deprecated_since: Maybe(int),
 }
 
 XML_Parser_Enum :: struct {
 	next: ^XML_Parser_Enum,
 	name: string,
 	since: Maybe(int),
+	deprecated_since: Maybe(int),
 	bitfield: bool,
 	description: ^XML_Parser_Description,
-	entry_list: ^XML_Parser_Entry,
+	entry: ^XML_Parser_Entry,
 }
 
 XML_Parser_Entry :: struct {
@@ -274,6 +291,8 @@ XML_Parser_Entry :: struct {
 	name: string,
 	summary: string,
 	value: int,
+	since: Maybe(int),
+	deprecated_since: Maybe(int),
 }
 
 XML_Parse_Error :: enum {
@@ -282,8 +301,10 @@ XML_Parse_Error :: enum {
 	Unexpected_Token,
 	Unexpected_Closing_Tag,
 	Integer_Cast_Failure,
+	Boolean_Cast_Failure,
 	Reflection_Unhandled_Base_Type,
 	Reflection_Incorrect_Integer_Size,
+	Reflection_Incorrect_Boolean_Size,
 	Reflection_Union_Is_Not_Maybe_Like,
 }
 
@@ -476,6 +497,62 @@ xml_parse_tag :: proc(
 	error: XML_Error,
 ) {
 	@(require_results)
+	get_struct_field :: proc(
+		type: typeid,
+		target_name: string,
+		string_allocator := context.temp_allocator,
+	) -> (
+		struct_field: reflect.Struct_Field,
+		struct_field_offset: uintptr,
+		ok: bool,
+	) {
+		@(require_results)
+		_get_struct_field :: proc(
+			type: typeid,
+			target_name: string,
+			underscored_target_name: string,
+			string_allocator := context.temp_allocator,
+		) -> (
+			struct_field: reflect.Struct_Field,
+			struct_field_offset: uintptr,
+			ok: bool,
+		) {
+			context.allocator = mem.panic_allocator()
+			context.temp_allocator = string_allocator
+
+			for _struct_field in reflect.struct_fields_zipped(type) {
+				if _struct_field.is_using == true {
+					struct_field, struct_field_offset, ok = _get_struct_field(struct_field.type.id, target_name, underscored_target_name, string_allocator)
+					if ok == true {
+						struct_field_offset += _struct_field.offset
+						return
+					}
+				}
+
+				switch _struct_field.name {
+				case target_name, underscored_target_name:
+					break
+				case:
+					continue
+				}
+
+				struct_field = _struct_field
+				struct_field_offset = _struct_field.offset
+			}
+
+			return struct_field, struct_field_offset, struct_field.type != nil
+		}
+
+		underscored_target_name: string
+
+		target_name := target_name
+		target_name, _ = strings.replace_all(target_name, "-", "_", allocator = string_allocator)
+
+		underscored_target_name = fmt.aprintf("_%s", target_name, allocator = string_allocator)
+
+		return _get_struct_field(type, target_name, underscored_target_name, string_allocator)
+	}
+	@(require_results)
 	parse_tag :: proc(
 		lexer: ^XML_Lexer,
 		$T: typeid,
@@ -485,23 +562,31 @@ xml_parse_tag :: proc(
 		tag: T,
 		error: XML_Error,
 	) where T != XML_Parser_Unknown {
+		content_string_builder: strings.Builder
 		tag_ptr: [^]byte
 
+		content_string_builder = strings.builder_make_none(arena_allocator)
 		tag_ptr = cast([^]byte)&tag
 
 		attribute_parse_loop: for {
 			attribute: XML_Parser_Attribute
 			attribute_ok: bool
+			is_empty_element_tag: bool
 
 			struct_field: reflect.Struct_Field
+			struct_field_offset: uintptr
 			attribute_ptr: [^]byte
 
-			attribute, attribute_ok = xml_parse_attribute(lexer) or_return
+			attribute, attribute_ok, is_empty_element_tag = xml_parse_attribute(lexer) or_return
+			if is_empty_element_tag == true {
+				return tag, nil
+			}
 			if attribute_ok == false {
 				break
 			}
 
-			struct_field = reflect.struct_field_by_name(T, attribute.name)
+			//struct_field = reflect.struct_field_by_name(T, attribute.name)
+			struct_field, struct_field_offset, _ = get_struct_field(T, attribute.name, scratch_allocator)
 			if struct_field.type == nil {
 				header: string
 
@@ -509,7 +594,8 @@ xml_parse_tag :: proc(
 				fmt.eprintfln("%s Ignoring unknown attribute: \"%s\"", header, attribute.name)
 			}
 
-			attribute_ptr = tag_ptr[struct_field.offset:]
+			//attribute_ptr = tag_ptr[struct_field.offset:]
+			attribute_ptr = tag_ptr[struct_field_offset:]
 			#partial switch variant in reflect.type_info_base(struct_field.type).variant {
 			case reflect.Type_Info_String:
 				(cast(^string)attribute_ptr)^ = attribute.value
@@ -535,6 +621,28 @@ xml_parse_tag :: proc(
 				}
 
 				(cast(^int)attribute_ptr)^ = value
+			case reflect.Type_Info_Boolean:
+				value: bool
+				value_convert_success: bool
+
+				if struct_field.type.size != size_of(bool) {
+					header: string
+
+					header = xml_parse_generate_print_header("Error", attribute.name_location)
+					fmt.eprintfln("%s Integer in structure was %v bytes, not %v!", header, struct_field.type.size, size_of(int))
+					return tag, XML_Parse_Error.Reflection_Incorrect_Boolean_Size
+				}
+
+				value, value_convert_success = strconv.parse_bool(attribute.value)
+				if value_convert_success == false {
+					header: string
+
+					header = xml_parse_generate_print_header("Error", attribute.value_location)
+					fmt.eprintfln("%s Failed to convert \"%s\" to an boolean!", header, attribute.value)
+					return tag, XML_Parse_Error.Boolean_Cast_Failure
+				}
+
+				(cast(^bool)attribute_ptr)^ = value
 			case reflect.Type_Info_Union:
 				value:int
 				value_convert_success: bool
@@ -575,33 +683,26 @@ xml_parse_tag :: proc(
 		}
 
 		content_parse_loop: for {
-			/*
-				 TODO:
-				 I need to consume the content of the tag
-				 and check if a new tag is starting
-				 and call 'xml_parse_tag'.
-
-				 When there is no new tag, I should collect
-				 all the data into a string builder
-
-				 All the code below should be for after calling 'xml_parse_tag'
-
-				 Ex:
-				 if not '<' then
-					add content to string builder
-					continue
-				 end
-				 xml_parse_tag
-				 if closing_tag then
-					break loop
-				 end
-				 handle tag stuff
-			*/
 			child_tag: XML_Parser_Tag
 			child_tag_is_closing_tag: bool
 			child_tag_name: string
+			child_tag_variant: any
+			child_tag_variant_type_info: ^reflect.Type_Info
 
 			struct_field: reflect.Struct_Field
+			struct_field_offset: uintptr
+			content_ptr: [^]byte
+
+			for {
+				token: XML_Token
+
+				token = xml_lexer_token_next(lexer) or_return
+				if token.type == .Angle_Bracket_Left {
+					break
+				}
+
+				strings.write_string(&content_string_builder, token.lexeme)
+			}
 
 			child_tag, child_tag_is_closing_tag = xml_parse_tag(lexer) or_return
 			child_tag_name = xml_parser_tag_variant_to_string(child_tag.variant)
@@ -621,7 +722,7 @@ xml_parse_tag :: proc(
 				break
 			}
 
-			struct_field = reflect.struct_field_by_name(T, child_tag_name)
+			struct_field, struct_field_offset, _ = get_struct_field(T, child_tag_name)
 			if struct_field.type == nil {
 				header: string
 				tag_name: string
@@ -631,6 +732,53 @@ xml_parse_tag :: proc(
 				header = xml_parse_generate_print_header("Warning", child_tag.location)
 				fmt.eprintfln("%s \"%s\" is not a valid tag inside a \"%s\" tag!", header, child_tag_name, tag_name)
 			}
+			content_ptr = tag_ptr[struct_field_offset:]
+
+			descend_through_next_list: {
+				type_info_ptr: reflect.Type_Info_Pointer
+				type_info_elem: ^reflect.Type_Info
+				type_info_is_pointer: bool
+				next_struct_field: reflect.Struct_Field
+
+				if (cast(^rawptr)content_ptr)^ == nil {
+					break descend_through_next_list
+				}
+
+				type_info_ptr, type_info_is_pointer = struct_field.type.variant.(reflect.Type_Info_Pointer)
+				if type_info_is_pointer == false {
+					break descend_through_next_list
+				}
+				type_info_elem = type_info_ptr.elem
+
+				next_struct_field = reflect.struct_field_by_name(type_info_elem.id, "next")
+				if next_struct_field.type == nil {
+					break descend_through_next_list
+				}
+
+				for {
+					content_ptr = cast([^]byte)(cast(^rawptr)content_ptr)^
+					if (cast(^rawptr)content_ptr)^ == nil {
+						break
+					}
+					content_ptr = content_ptr[next_struct_field.offset:]
+				}
+			}
+
+			child_tag_variant = reflect.get_union_variant(child_tag.variant)
+			child_tag_variant_type_info = type_info_of(child_tag_variant.id)
+			(cast(^rawptr)content_ptr)^, _ = mem.alloc(child_tag_variant_type_info.size, child_tag_variant_type_info.align, arena_allocator)
+			mem.copy((cast(^rawptr)content_ptr)^, child_tag_variant.data, child_tag_variant_type_info.size)
+		}
+
+		set_content_string: {
+			struct_field: reflect.Struct_Field
+
+			struct_field = reflect.struct_field_by_name(T, "content")
+			if struct_field.type == nil {
+				break set_content_string
+			}
+
+			(cast(^string)tag_ptr[struct_field.offset:])^ = strings.to_string(content_string_builder)
 		}
 
 		return tag, nil
@@ -648,10 +796,10 @@ xml_parse_tag :: proc(
 		#partial switch token.type {
 		case .Angle_Bracket_Left:
 			token = xml_parse_skip_ws(lexer) or_return
-		case .Identifier, .Forward_Slash:
+		case .Identifier, .Forward_Slash, .Exclamation:
 			break
 		case:
-			xml_parse_print_error_expected(token.location, "< (or) / (or) %identifier%", token.lexeme)
+			xml_parse_print_error_expected(token.location, "< (or) ! (or) / (or) %identifier%", token.lexeme)
 			return tag, false, XML_Parse_Error.Unexpected_Token
 		}
 		tag.location = token.location
@@ -757,9 +905,12 @@ xml_parse_attribute :: proc(
 ) -> (
 	attribute: XML_Parser_Attribute,
 	attribute_found: bool,
+	tag_closed: bool,
 	error: XML_Error,
 ) {
 	token: XML_Token
+	identifier_name_location: XML_Token_Location
+	identifier_name_string_builder: strings.Builder
 	value_builder: strings.Builder
 
 	context.allocator = arena_allocator
@@ -767,42 +918,45 @@ xml_parse_attribute :: proc(
 
 	assert(lexer != nil)
 
-
 	token = xml_parse_skip_ws(lexer) or_return
+	identifier_name_location = token.location
 
-	#partial switch token.type {
-	case .Forward_Slash:
-		token = xml_parse_skip_ws(lexer) or_return
-		if token.type != .Angle_Bracket_Right {
-			xml_parse_print_error_expected(lexer^, ">", token.lexeme)
-			return {}, false, XML_Parse_Error.Unexpected_Token
+	identifier_name_string_builder = strings.builder_make_len_cap(0, len(token.lexeme), arena_allocator)
+
+	identifier_parse_loop: for {
+		#partial switch token.type {
+		case .Forward_Slash:
+			token = xml_parse_skip_ws(lexer) or_return
+			if token.type != .Angle_Bracket_Right {
+				xml_parse_print_error_expected(lexer^, ">", token.lexeme)
+				return {}, false, false, XML_Parse_Error.Unexpected_Token
+			}
+			return {}, false, true, nil
+		case .Angle_Bracket_Right:
+			return {}, false, false, nil
+		case .Identifier, .Hyphen:
+			strings.write_string(&identifier_name_string_builder, token.lexeme)
+		case .Equals:
+			break identifier_parse_loop
+		case:
+			token_type_as_string: string
+
+			token_type_as_string = fmt.tprintf("%v", token.type)
+			xml_parse_print_error_expected(lexer^, "Identifier", token_type_as_string)
+
+			return {}, false, false, XML_Parse_Error.Unexpected_Token
 		}
-		fallthrough
-	case .Angle_Bracket_Right:
-		return {}, false, nil
-	case .Identifier:
-		break
-	case:
-		token_type_as_string: string
 
-		token_type_as_string = fmt.tprintf("%v", token.type)
-		xml_parse_print_error_expected(lexer^, "Identifier", token_type_as_string)
-
-		return {}, false, XML_Parse_Error.Unexpected_Token
+		token = xml_lexer_token_next(lexer) or_return
 	}
 
-	attribute.name = token.lexeme
-	attribute.name_location = token.location
+	attribute.name = strings.to_string(identifier_name_string_builder)
+	attribute.name_location = identifier_name_location
 
-	token = xml_parse_skip_ws(lexer) or_return
-	if token.type != .Equals {
-		xml_parse_print_error_expected(lexer^, "=", token.lexeme)
-		return {}, false, XML_Parse_Error.Unexpected_Token
-	}
 	token = xml_parse_skip_ws(lexer) or_return
 	if token.type != .Double_Quotation {
 		xml_parse_print_error_expected(lexer^, "\"", token.lexeme)
-		return {}, false, XML_Parse_Error.Unexpected_Token
+		return {}, false, false, XML_Parse_Error.Unexpected_Token
 	}
 
 	token = xml_lexer_token_next(lexer) or_return
@@ -819,5 +973,5 @@ xml_parse_attribute :: proc(
 	attribute.value = strings.to_string(value_builder)
 	attribute.value_location = token.location
 
-	return attribute, true, nil
+	return attribute, true, false, nil
 }

@@ -1,2 +1,6 @@
 # Executable
 wayland-scanner-odin*
+
+# Output File
+wayland.odin
+test/
