@@ -242,26 +242,13 @@ XML_Parser_Proc :: struct {
 	description: ^XML_Parser_Description,
 	arg: ^XML_Parser_Arg,
 }
-// TODO: Return to using version
 XML_Parser_Event :: struct {
 	next: ^XML_Parser_Event,
-	//using _proc: XML_Parser_Proc,
-	name: string,
-	type: string,
-	since: Maybe(int),
-	deprecated_since: Maybe(int),
-	description: ^XML_Parser_Description,
-	arg: ^XML_Parser_Arg,
+	using _proc: XML_Parser_Proc,
 }
 XML_Parser_Request :: struct {
 	next: ^XML_Parser_Request,
-	//using _proc: XML_Parser_Proc,
-	name: string,
-	type: string,
-	since: Maybe(int),
-	deprecated_since: Maybe(int),
-	description: ^XML_Parser_Description,
-	arg: ^XML_Parser_Arg,
+	using _proc: XML_Parser_Proc,
 }
 
 XML_Parser_Arg :: struct {
@@ -522,7 +509,7 @@ xml_parse_tag :: proc(
 
 			for _struct_field in reflect.struct_fields_zipped(type) {
 				if _struct_field.is_using == true {
-					struct_field, struct_field_offset, ok = _get_struct_field(struct_field.type.id, target_name, underscored_target_name, string_allocator)
+					struct_field, struct_field_offset, ok = _get_struct_field(_struct_field.type.id, target_name, underscored_target_name, string_allocator)
 					if ok == true {
 						struct_field_offset += _struct_field.offset
 						return
