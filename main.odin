@@ -72,7 +72,7 @@ main :: proc() {
 			log.fatalf("Args Parsing Allocator Error: %v", args_allocator_error)
 		}
 
-		output_file, output_file_open_error = os.open(args.file_path_out, { .Write, .Create, .Trunc }, 0o666)
+		output_file, output_file_open_error = os.open(args.file_path_out, { .Write, .Create, .Trunc }, os.Permissions_Read_Write_All)
 		if output_file_open_error != nil {
 			fmt.eprintfln("Failed to open file \"%s\": %v", args.file_path_out, output_file_open_error)
 			os.exit(1)
@@ -85,9 +85,6 @@ main :: proc() {
 			bufio.writer_destroy(&buffered_output_writer)
 		}
 		buffered_output_stream = bufio.writer_to_stream(&buffered_output_writer)
-
-		output_write_header(buffered_output_stream)
-		output_write_ffi(buffered_output_stream, args)
 
 		bufio.reader_init(&buffered_reader, {}, mem.Megabyte)
 		defer bufio.reader_destroy(&buffered_reader)
@@ -129,13 +126,13 @@ main :: proc() {
 			case:
 				log.panicf("Failed to parse: %v", xml_parse_error)
 			}
+			output_write_protocol(buffered_output_stream, protocol)
 		}
 	}
 }
 
 Args_Property :: enum {
-	No_FFI = 0,
-	Is_Server,
+	Is_Server = 0,
 }
 Args_Property_Flags :: bit_set[Args_Property]
 
@@ -185,10 +182,6 @@ parse_args :: proc(
 		switch arg {
 		case "-o":
 			args.file_path_out = arg_pop_next(&arg_array) or_break
-		case "-ffi":
-			args.property_flags -= { .No_FFI }
-		case "-no-ffi":
-			args.property_flags += { .No_FFI }
 		case "-client":
 			args.property_flags -= { .Is_Server }
 		case "-server":
