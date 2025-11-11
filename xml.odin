@@ -680,15 +680,15 @@ xml_parse_tag :: proc(
 			struct_field_offset: uintptr
 			content_ptr: [^]byte
 
-			for {
-				token: XML_Token
+			token: XML_Token
 
-				token = xml_lexer_token_next(lexer) or_return
+			token = xml_parse_skip_ws(lexer) or_return
+			for {
 				if token.type == .Angle_Bracket_Left {
 					break
 				}
-
 				strings.write_string(&content_string_builder, token.lexeme)
+				token = xml_lexer_token_next(lexer) or_return
 			}
 
 			child_tag, child_tag_is_closing_tag = xml_parse_tag(lexer) or_return
@@ -759,13 +759,15 @@ xml_parse_tag :: proc(
 
 		set_content_string: {
 			struct_field: reflect.Struct_Field
+			trimmed_string: string
 
 			struct_field = reflect.struct_field_by_name(T, "content")
 			if struct_field.type == nil {
 				break set_content_string
 			}
 
-			(cast(^string)tag_ptr[struct_field.offset:])^ = strings.to_string(content_string_builder)
+			trimmed_string = strings.trim_right(strings.to_string(content_string_builder), " \t\r\n")
+			(cast(^string)tag_ptr[struct_field.offset:])^ = trimmed_string
 		}
 
 		return tag, nil

@@ -89,6 +89,7 @@ main :: proc() {
 		bufio.reader_init(&buffered_reader, {}, mem.Megabyte)
 		defer bufio.reader_destroy(&buffered_reader)
 
+		output_write_header(buffered_output_stream)
 		for file_path_in in args.file_path_in_array {
 			file: ^os.File
 			file_open_error: os.Error
@@ -126,7 +127,9 @@ main :: proc() {
 			case:
 				log.panicf("Failed to parse: %v", xml_parse_error)
 			}
-			output_write_protocol(buffered_output_stream, protocol)
+			output_write_protocol(buffered_output_stream, protocol, args)
+
+			free_all(context.temp_allocator)
 		}
 	}
 }
