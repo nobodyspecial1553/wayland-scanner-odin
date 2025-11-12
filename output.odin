@@ -14,6 +14,7 @@ Output_Validation_Error :: enum {
 	Interface_No_Name,
 	Description_No_Content,
 	Proc_No_Name,
+	Arg_Invalid_Type,
 }
 
 Output_Error :: union #shared_nil {
@@ -75,18 +76,57 @@ output_write_interface :: proc(
 	) -> (
 		error: Output_Error,
 	) {
+		ret_arg: ^XML_Parser_Arg
+
 		arg := arg
 
 		context.allocator = mem.panic_allocator()
 		context.temp_allocator = scratch_allocator
 
-		for ; arg != nil; arg = arg.next {
+		io.write_rune(writer, '(') or_return
 
+		if arg != nil do for {
+			switch arg.type {
+			case "int", "fixed", "fd": // i32
+			case "uint", "object": // u32
+			case "string": // cstring
+			case "new_id": // specific interface struct or generic interface followed by version
+			case "array":
+			case:
+				fmt.eprintfln("Invalid Arg Type: %s", arg.type)
+				return Output_Validation_Error.Arg_Invalid_Type
+			}
+			if arg.next != nil {
+				io.write_string(writer, ", ") or_return
+				arg = arg.next
+			}
+			else {
+				break
+			}
+		}
+
+		io.write_rune(writer, ')') or_return
+
+		if ret_arg != nil {
+			interface_name: string
+
+			if ret_arg.interface[:3] == "wl_" {
+				interface_name = ret_arg.interface[3:]
+			}
+			else {
+				interface_name = ret_arg.interface
+			}
+
+			io.write_string(writer, " -> (") or_return
+			io.write_string(writer, ret_arg.name) or_return
+			io.write_string(writer, ": ^") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_rune(writer, ')') or_return
 		}
 
 		return nil
 	}
-	write_proc_listener :: proc(
+	write_proc_listeners :: proc(
 		writer: io.Writer,
 		_proc: $T,
 		interface_name: string,
@@ -158,15 +198,17 @@ output_write_interface :: proc(
 
 			io.write_rune(writer, '\t') or_return
 			io.write_string(writer, _proc.name) or_return
-			io.write_string(writer, " :: #type proc \"c\" (")
+			io.write_string(writer, " :: #type proc \"c\" ")
 			write_proc_args(writer, _proc.arg, scratch_allocator) or_return
-			io.write_string(writer, "),\n") or_return
+			io.write_string(writer, ",\n") or_return
 		}
 		io.write_string(writer, "}\n\n") or_return
 
+		// TODO: Write add_listener proc
+
 		return nil
 	}
-	write_proc_definitions :: proc(
+	write_proc_interfaces :: proc(
 		writer: io.Writer,
 		_proc: $T,
 		interface_name: string,
@@ -181,6 +223,11 @@ output_write_interface :: proc(
 			return nil
 		}
 		// TODO:
+		/*
+			 Note: If an interface doesn't have a destroy request,
+				it is worth generating a destroy request regardless,
+				and using wl_proxy_destroy
+		*/
 		return nil
 	}
 
@@ -294,12 +341,12 @@ output_write_interface :: proc(
 	}
 
 	if .Is_Server in args.property_flags {
-		write_proc_listener(writer, interface.request, interface_name, scratch_allocator) or_return
-		write_proc_definitions(writer, interface.event, interface_name, scratch_allocator) or_return
+		write_proc_listeners(writer, interface.request, interface_name, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.event, interface_name, scratch_allocator) or_return
 	}
 	else {
-		write_proc_listener(writer, interface.event, interface_name, scratch_allocator) or_return
-		write_proc_definitions(writer, interface.request, interface_name, scratch_allocator) or_return
+		write_proc_listeners(writer, interface.event, interface_name, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.request, interface_name, scratch_allocator) or_return
 	}
 
 	return nil
