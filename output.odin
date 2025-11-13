@@ -216,22 +216,131 @@ output_write_interface :: proc(
 		writer: io.Writer,
 		_proc: $T,
 		interface_name: string,
+		write_destroy_request_if_missing: bool,
 		scratch_allocator := context.temp_allocator,
 	) -> (
 		error: Output_Error,
 	) where intrinsics.type_is_pointer(T), type_of(_proc._proc) == XML_Parser_Proc {
+		has_destroy_request: bool
+
+		_proc := _proc
+
 		context.allocator = mem.panic_allocator()
 		context.temp_allocator = scratch_allocator
 
 		if _proc == nil {
 			return nil
 		}
-		// TODO:
-		/*
-			 Note: If an interface doesn't have a destroy request,
-				it is worth generating a destroy request regardless,
-				and using wl_proxy_destroy
-		*/
+
+		for ; _proc != nil; _proc = _proc.next {
+			ret_arg: ^XML_Parser_Arg
+
+			if _proc.name == "destroy" {
+				has_destroy_request = true
+			}
+
+			if _proc.description != nil {
+				io.write_string(writer, "/*\n") or_return
+				if len(_proc.description.summary) != 0 {
+					io.write_string(writer, "\tSummary: ") or_return
+					io.write_string(writer, _proc.description.summary) or_return
+					io.write_rune(writer, '\n') or_return
+					if len(_proc.description.content) != 0 {
+						io.write_rune(writer, '\n') or_return
+					}
+				}
+				for line in strings.split_lines_iterator(&_proc.description.content) {
+					io.write_rune(writer, '\t') or_return
+					io.write_string(writer, strings.trim_left(line, " \t")) or_return
+					io.write_rune(writer, '\n') or_return
+				}
+				io.write_string(writer, "*/\n") or_return
+			}
+			if since, since_exists := _proc.since.?; since_exists == true {
+				io.write_string(writer, "// Since Version: ") or_return
+				io.write_int(writer, since) or_return
+				io.write_rune(writer, '\n') or_return
+			}
+			if deprecated_since, deprecated_since_exists := _proc.deprecated_since.?; deprecated_since_exists == true {
+				io.write_string(writer, "// Deprecated Since Version: ") or_return
+				io.write_int(writer, deprecated_since) or_return
+				io.write_rune(writer, '\n') or_return
+			}
+
+			io.write_string(writer, interface_name) or_return
+			io.write_rune(writer, '_') or_return
+			io.write_string(writer, _proc.name) or_return
+			io.write_string(writer, " :: proc(") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ": ^") or_return
+			io.write_string(writer, interface_name) or_return
+
+			for arg := _proc.arg; arg != nil; arg = arg.next {
+				io.write_string(writer, ", ") or_return
+				io.write_string(writer, arg.name) or_return
+				io.write_string(writer, ": ") or_return
+
+				switch arg.type {
+				case "int", "fd":
+					io.write_string(writer, "i32") or_return
+				case "uint":
+					if len(arg._enum) == 0 {
+						io.write_string(writer, "u32") or_return
+					}
+					else {
+						io.write_string(writer, interface_name) or_return
+						io.write_rune(writer, '_') or_return
+						io.write_string(writer, arg._enum) or_return
+					}
+				case "fixed":
+					io.write_string(writer, "fixed") or_return
+				case "string": // cstring
+					io.write_string(writer, "cstring") or_return
+				case "array":
+					io.write_string(writer, "^array") or_return
+				case "new_id": // specific interface struct or generic interface followed by version
+					ret_arg = arg
+
+					if len(arg.interface) == 0 {
+						io.write_string(writer, "^interface") or_return
+					}
+					else {
+						io.write_rune(writer, '^') or_return
+						io.write_string(writer, arg.interface) or_return
+					}
+				case "object":
+					if len(arg.interface) == 0 {
+						io.write_string(writer, "^object") or_return
+					}
+					else {
+						io.write_rune(writer, '^') or_return
+						io.write_string(writer, arg.interface) or_return
+					}
+				case:
+					fmt.eprintfln("Invalid Arg Type: %s", arg.type)
+					return Output_Validation_Error.Arg_Invalid_Type
+				}
+			}
+			io.write_string(writer, ") ") or_return
+			if ret_arg != nil {
+			}
+			io.write_string(writer, "{\n") or_return
+			// TODO: Function body
+			io.write_string(writer, "}\n\n") or_return
+		}
+
+		if has_destroy_request == false && write_destroy_request_if_missing == true {
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, "_destroy :: proc(") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ": ^") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ") {\n\tproxy_destroy(cast(^proxy)") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ")\n}\n") or_return
+		}
+
+		io.write_rune(writer, '\n') or_return
 		return nil
 	}
 
@@ -350,11 +459,11 @@ output_write_interface :: proc(
 
 	if .Is_Server in args.property_flags {
 		write_proc_listeners(writer, interface.request, interface_name, scratch_allocator) or_return
-		write_proc_interfaces(writer, interface.event, interface_name, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.event, interface_name, false, scratch_allocator) or_return
 	}
 	else {
 		write_proc_listeners(writer, interface.event, interface_name, scratch_allocator) or_return
-		write_proc_interfaces(writer, interface.request, interface_name, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.request, interface_name, true, scratch_allocator) or_return
 	}
 
 	return nil
