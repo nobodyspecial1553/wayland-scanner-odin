@@ -69,63 +69,6 @@ output_write_interface :: proc(
 ) -> (
 	error: Output_Error,
 ) {
-	write_proc_args :: proc(
-		writer: io.Writer,
-		arg: ^XML_Parser_Arg,
-		scratch_allocator := context.temp_allocator,
-	) -> (
-		error: Output_Error,
-	) {
-		ret_arg: ^XML_Parser_Arg
-
-		arg := arg
-
-		context.allocator = mem.panic_allocator()
-		context.temp_allocator = scratch_allocator
-
-		io.write_rune(writer, '(') or_return
-
-		if arg != nil do for {
-			switch arg.type {
-			case "int", "fixed", "fd": // i32
-			case "uint", "object": // u32
-			case "string": // cstring
-			case "new_id": // specific interface struct or generic interface followed by version
-			case "array":
-			case:
-				fmt.eprintfln("Invalid Arg Type: %s", arg.type)
-				return Output_Validation_Error.Arg_Invalid_Type
-			}
-			if arg.next != nil {
-				io.write_string(writer, ", ") or_return
-				arg = arg.next
-			}
-			else {
-				break
-			}
-		}
-
-		io.write_rune(writer, ')') or_return
-
-		if ret_arg != nil {
-			interface_name: string
-
-			if ret_arg.interface[:3] == "wl_" {
-				interface_name = ret_arg.interface[3:]
-			}
-			else {
-				interface_name = ret_arg.interface
-			}
-
-			io.write_string(writer, " -> (") or_return
-			io.write_string(writer, ret_arg.name) or_return
-			io.write_string(writer, ": ^") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_rune(writer, ')') or_return
-		}
-
-		return nil
-	}
 	write_proc_listeners :: proc(
 		writer: io.Writer,
 		_proc: $T,
@@ -169,10 +112,11 @@ output_write_interface :: proc(
 					deprecated_since: int
 					deprecated_since_exists: bool
 
-					io.write_string(writer, "\t// Param ") or_return
+					io.write_string(writer, "\t// @param '") or_return
 					io.write_string(writer, arg.name) or_return
-					io.write_string(writer, ": ") or_return
+					io.write_string(writer, "' = \"") or_return
 					io.write_string(writer, arg.summary) or_return
+					io.write_rune(writer, '"') or_return
 
 					since, since_exists = arg.since.?
 					deprecated_since, deprecated_since_exists = arg.deprecated_since.?
@@ -198,13 +142,73 @@ output_write_interface :: proc(
 
 			io.write_rune(writer, '\t') or_return
 			io.write_string(writer, _proc.name) or_return
-			io.write_string(writer, " :: #type proc \"c\" ")
-			write_proc_args(writer, _proc.arg, scratch_allocator) or_return
+			io.write_string(writer, " :: #type proc \"c\" (data: rawptr, ") or_return
+			io.write_string(writer, interface_name) or_return 
+			io.write_string(writer, ": ^") or_return
+			io.write_string(writer, interface_name) or_return
+
+			for arg := _proc.arg; arg != nil; arg = arg.next {
+				io.write_string(writer, ", ") or_return
+				io.write_string(writer, arg.name) or_return
+				io.write_string(writer, ": ") or_return
+
+				switch arg.type {
+				case "int", "fd":
+					io.write_string(writer, "i32") or_return
+				case "uint":
+					if len(arg._enum) == 0 {
+						io.write_string(writer, "u32") or_return
+					}
+					else {
+						io.write_string(writer, interface_name) or_return
+						io.write_rune(writer, '_') or_return
+						io.write_string(writer, arg._enum) or_return
+					}
+				case "fixed":
+					io.write_string(writer, "fixed") or_return
+				case "string": // cstring
+					io.write_string(writer, "cstring") or_return
+				case "array":
+					io.write_string(writer, "^array") or_return
+				case "new_id": // specific interface struct or generic interface followed by version
+					if len(arg.interface) == 0 {
+						io.write_string(writer, "^interface") or_return
+					}
+					else {
+						io.write_rune(writer, '^') or_return
+						io.write_string(writer, arg.interface) or_return
+					}
+				case "object":
+					if len(arg.interface) == 0 {
+						io.write_string(writer, "^object") or_return
+					}
+					else {
+						io.write_rune(writer, '^') or_return
+						io.write_string(writer, arg.interface) or_return
+					}
+				case:
+					fmt.eprintfln("Invalid Arg Type: %s", arg.type)
+					return Output_Validation_Error.Arg_Invalid_Type
+				}
+			}
+
+			io.write_rune(writer, ')') or_return
+
 			io.write_string(writer, ",\n") or_return
 		}
-		io.write_string(writer, "}\n\n") or_return
+		io.write_string(writer, "}\n") or_return
 
-		// TODO: Write add_listener proc
+		io.write_string(writer, interface_name) or_return
+		io.write_string(writer, "_add_listener :: proc(") or_return
+		io.write_string(writer, interface_name) or_return
+		io.write_string(writer, ": ^") or_return
+		io.write_string(writer, interface_name) or_return
+		io.write_string(writer, ", ") or_return
+		io.write_string(writer, "listener: ^") or_return
+		io.write_string(writer, interface_name) or_return
+		io.write_string(writer, "_listener, data: rawptr) -> (success: i32) {\n\treturn proxy_add_listener(cast(^proxy)") or_return
+		io.write_string(writer, interface_name) or_return
+		io.write_string(writer, ", cast(^rawptr)listener, data)\n}\n\n") or_return
 
 		return nil
 	}
@@ -260,7 +264,11 @@ output_write_interface :: proc(
 	io.write_string(writer, "*/\n\n") or_return
 
 	io.write_string(writer, interface_name) or_return
-	io.write_string(writer, " :: struct {}\n\n") or_return
+	io.write_string(writer, " :: struct {}\n") or_return
+	io.write_string(writer, interface_name) or_return
+	io.write_string(writer, "_struct :: ") or_return
+	io.write_string(writer, interface_name) or_return
+	io.write_string(writer, "\n\n") or_return
 
 	io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface.name, interface_name, allocator = scratch_allocator)) or_return
 	io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface.name, allocator = scratch_allocator)) or_return
