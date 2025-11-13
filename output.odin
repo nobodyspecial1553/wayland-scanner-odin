@@ -270,14 +270,14 @@ output_write_interface :: proc(
 	io.write_string(writer, interface_name) or_return
 	io.write_string(writer, "\n\n") or_return
 
-	io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface.name, interface_name, allocator = scratch_allocator)) or_return
-	io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface.name, allocator = scratch_allocator)) or_return
+	io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+	io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
-	io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc(%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface.name, interface_name, allocator = scratch_allocator)) or_return
-	io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data((^proxy)%s)\n}}\n\n", interface.name, allocator = scratch_allocator)) or_return
+	io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc(%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+	io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
-	io.write_string(writer, fmt.aprintf("%s_get_version :: proc(%s: ^%s) -> (version: u32) {{\n", interface_name, interface.name, interface_name, allocator = scratch_allocator)) or_return
-	io.write_string(writer, fmt.aprintf("\treturn proxy_get_version((^proxy)%s)\n}}\n\n", interface.name, allocator = scratch_allocator)) or_return
+	io.write_string(writer, fmt.aprintf("%s_get_version :: proc(%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+	io.write_string(writer, fmt.aprintf("\treturn proxy_get_version((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
 	for _enum := interface._enum; _enum != nil; _enum = _enum.next {
 		enum_name: string
