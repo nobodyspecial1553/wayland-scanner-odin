@@ -222,6 +222,7 @@ output_write_interface :: proc(
 		error: Output_Error,
 	) where intrinsics.type_is_pointer(T), type_of(_proc._proc) == XML_Parser_Proc {
 		has_destroy_request: bool
+		proc_index: int
 
 		_proc := _proc
 
@@ -234,6 +235,7 @@ output_write_interface :: proc(
 
 		for ; _proc != nil; _proc = _proc.next {
 			ret_arg: ^XML_Parser_Arg
+			proc_index_name_string: string
 
 			if _proc.name == "destroy" {
 				has_destroy_request = true
@@ -267,6 +269,30 @@ output_write_interface :: proc(
 				io.write_rune(writer, '\n') or_return
 			}
 
+			{
+				string_arena: mem.Arena
+				string_arena_allocator: mem.Allocator
+				interface_constant_string_builder: strings.Builder
+
+				mem.arena_init(&string_arena, new([2048]byte, scratch_allocator)[:])
+				string_arena_allocator = mem.arena_allocator(&string_arena)
+
+				interface_constant_string_builder = strings.builder_make_len_cap(0, len(interface_name) + len(_proc.name), string_arena_allocator)
+
+				strings.write_string(&interface_constant_string_builder, strings.to_screaming_snake_case(interface_name, string_arena_allocator))
+				strings.write_rune(&interface_constant_string_builder, '_')
+				strings.write_string(&interface_constant_string_builder, strings.to_screaming_snake_case(_proc.name, string_arena_allocator))
+
+				proc_index_name_string = strings.to_string(interface_constant_string_builder)
+
+				io.write_string(writer, proc_index_name_string) or_return
+				io.write_string(writer, " :: ") or_return
+				io.write_int(writer, proc_index) or_return
+				io.write_rune(writer, '\n') or_return
+
+				proc_index += 1
+			}
+
 			io.write_string(writer, interface_name) or_return
 			io.write_rune(writer, '_') or_return
 			io.write_string(writer, _proc.name) or_return
@@ -276,14 +302,16 @@ output_write_interface :: proc(
 			io.write_string(writer, interface_name) or_return
 
 			for arg := _proc.arg; arg != nil; arg = arg.next {
-				io.write_string(writer, ", ") or_return
-				io.write_string(writer, arg.name) or_return
-				io.write_string(writer, ": ") or_return
-
 				switch arg.type {
 				case "int", "fd":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "i32") or_return
 				case "uint":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					if len(arg._enum) == 0 {
 						io.write_string(writer, "u32") or_return
 					}
@@ -293,40 +321,140 @@ output_write_interface :: proc(
 						io.write_string(writer, arg._enum) or_return
 					}
 				case "fixed":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "fixed") or_return
 				case "string": // cstring
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "cstring") or_return
 				case "array":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "^array") or_return
 				case "new_id": // specific interface struct or generic interface followed by version
 					ret_arg = arg
 
 					if len(arg.interface) == 0 {
-						io.write_string(writer, "^interface") or_return
-					}
-					else {
-						io.write_rune(writer, '^') or_return
-						io.write_string(writer, arg.interface) or_return
+						io.write_string(writer, ", interface: ^interface, version: u32") or_return
 					}
 				case "object":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					if len(arg.interface) == 0 {
 						io.write_string(writer, "^object") or_return
 					}
 					else {
+						arg_interface_name: string
 						io.write_rune(writer, '^') or_return
-						io.write_string(writer, arg.interface) or_return
+						if arg.interface[:3] == "wl_" {
+							arg_interface_name = arg.interface[3:]
+						}
+						else {
+							arg_interface_name = arg.interface
+						}
+						io.write_string(writer, arg_interface_name) or_return
 					}
 				case:
 					fmt.eprintfln("Invalid Arg Type: %s", arg.type)
 					return Output_Validation_Error.Arg_Invalid_Type
 				}
 			}
-			io.write_string(writer, ") ") or_return
+			io.write_string(writer, ")") or_return
 			if ret_arg != nil {
+				io.write_string(writer, " -> (") or_return
+				io.write_string(writer, ret_arg.name) or_return
+				io.write_string(writer, ": ") or_return
+				if len(ret_arg.interface) != 0 {
+					ret_arg_interface_name: string
+
+					io.write_rune(writer, '^') or_return
+					if ret_arg.interface[:3] == "wl_" {
+						ret_arg_interface_name = ret_arg.interface[3:]
+					}
+					else {
+						ret_arg_interface_name = ret_arg.interface
+					}
+					io.write_string(writer, ret_arg_interface_name) or_return
+					io.write_rune(writer, ')') or_return
+				}
+				else {
+					io.write_string(writer, "rawptr)") or_return
+				}
 			}
-			io.write_string(writer, "{\n") or_return
-			// TODO: Function body
-			io.write_string(writer, "}\n\n") or_return
+			io.write_string(writer, " {\n\t") or_return
+			if ret_arg != nil {
+				io.write_string(writer, "return cast(") or_return
+				if len(ret_arg.interface) == 0 {
+					io.write_string(writer, "rawptr)") or_return
+				}
+				else {
+					ret_arg_interface_name: string
+
+					io.write_rune(writer, '^') or_return
+					if ret_arg.interface[:3] == "wl_" {
+						ret_arg_interface_name = ret_arg.interface[3:]
+					}
+					else {
+						ret_arg_interface_name = ret_arg.interface
+					}
+					io.write_string(writer, ret_arg_interface_name) or_return
+					io.write_string(writer, "_struct") or_return // Resolves potential naming conflicts
+					io.write_rune(writer, ')') or_return
+				}
+			}
+			io.write_string(writer, "proxy_marshal_flags(cast(^proxy)") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ", ") or_return
+			io.write_string(writer, proc_index_name_string) or_return
+			io.write_string(writer, ", ") or_return
+			if ret_arg != nil {
+				if len(ret_arg.interface) == 0 {
+					io.write_string(writer, "interface, version") or_return
+				}
+				else {
+					ret_arg_interface_name: string
+
+					if ret_arg.interface[:3] == "wl_" {
+						ret_arg_interface_name = ret_arg.interface[3:]
+					}
+					else {
+						ret_arg_interface_name = ret_arg.interface
+					}
+					io.write_string(writer, ret_arg_interface_name) or_return
+					io.write_string(writer, "_interface, ") or_return
+					io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
+					io.write_string(writer, interface_name) or_return
+				}
+			}
+			else {
+				io.write_string(writer, "nil, ") or_return
+				io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
+				io.write_string(writer, interface_name) or_return
+			}
+			switch _proc.type {
+			case "destructor":
+				io.write_string(writer, ", MARSHAL_FLAG_DESTROY") or_return
+			case "":
+				io.write_string(writer, ", 0") or_return
+			case:
+				fmt.eprintfln("Invalid Proc Type: ", _proc.type)
+				return Output_Validation_Error.Arg_Invalid_Type
+			}
+			for arg := _proc.arg; arg != nil; arg = arg.next {
+				io.write_string(writer, ", ") or_return
+				switch arg.type {
+				case "new_id":
+					io.write_string(writer, "interface.name, version, nil") or_return
+				case:
+					io.write_string(writer, arg.name) or_return
+				}
+			}
+			io.write_string(writer, ")\n}\n\n") or_return
 		}
 
 		if has_destroy_request == false && write_destroy_request_if_missing == true {
@@ -456,6 +584,8 @@ output_write_interface :: proc(
 		}
 		io.write_string(writer, "}\n\n") or_return
 	}
+
+	// TODO: Write interfaces, messages and events
 
 	if .Is_Server in args.property_flags {
 		write_proc_listeners(writer, interface.request, interface_name, scratch_allocator) or_return
