@@ -507,6 +507,53 @@ output_write_interface :: proc(
 	io.write_string(writer, interface_name) or_return
 	io.write_string(writer, "\n\n") or_return
 
+	{
+		method_count: int
+		event_count: int
+
+		if interface.request != nil {
+			io.write_string(writer, fmt.aprintf("@(rodata)\n%s_requests := [?]message {{\n", interface.name, allocator = scratch_allocator)) or_return
+			for request := interface.request; request != nil; request = request.next {
+				method_count += 1
+				io.write_string(writer, "\t{ \"") or_return
+				io.write_string(writer, request.name) or_return
+				io.write_string(writer, "\", \"") or_return
+				if since, since_exists := request.since.?; since_exists == true && since > 1 {
+					io.write_int(writer, since) or_return
+				}
+				for arg := request.arg; arg != nil; arg = arg.next {
+				}
+				io.write_string(writer, "\", {") or_return
+				for arg := request.arg; arg != nil; arg = arg.next {
+				}
+				io.write_string(writer, "} },\n") or_return
+			}
+			io.write_string(writer, "}\n") or_return
+		}
+
+		io.write_string(writer, fmt.aprintf("@(rodata)\n%s_interface := interface {{\n\tname = \"%s\",\n\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
+		io.write_string(writer, "\tmethod_count = ") or_return
+		io.write_int(writer, method_count) or_return
+		io.write_string(writer, ",\n\tmethods = ") or_return
+		if method_count <= 0 {
+			io.write_string(writer, "nil,\n") or_return
+		}
+		else {
+			io.write_string(writer, fmt.aprintf("raw_data(&%s_requests),\n", interface.name, allocator = scratch_allocator)) or_return
+		}
+		io.write_string(writer, "\tevent_count = ") or_return
+		io.write_int(writer, event_count) or_return
+		io.write_string(writer, ",\n\tevents = ") or_return
+		if event_count <= 0 {
+			io.write_string(writer, "nil,\n") or_return
+		}
+		else {
+			io.write_string(writer, fmt.aprintf("raw_data(&%s_events),\n", interface.name, allocator = scratch_allocator)) or_return
+		}
+
+		io.write_string(writer, "}\n\n") or_return
+	}
+
 	io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
 	io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
@@ -584,8 +631,6 @@ output_write_interface :: proc(
 		}
 		io.write_string(writer, "}\n\n") or_return
 	}
-
-	// TODO: Write interfaces, messages and events
 
 	if .Is_Server in args.property_flags {
 		write_proc_listeners(writer, interface.request, interface_name, scratch_allocator) or_return
