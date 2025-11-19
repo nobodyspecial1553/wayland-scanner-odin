@@ -146,6 +146,7 @@ output_write_interface :: proc(
 			io.write_string(writer, interface_name) or_return 
 			io.write_string(writer, ": ^") or_return
 			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, "_struct") or_return
 
 			for arg := _proc.arg; arg != nil; arg = arg.next {
 				io.write_string(writer, ", ") or_return
