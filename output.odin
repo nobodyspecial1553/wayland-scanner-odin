@@ -122,11 +122,11 @@ output_write_interface :: proc(
 					deprecated_since, deprecated_since_exists = arg.deprecated_since.?
 					if since_exists || deprecated_since_exists {
 						io.write_rune(writer, '(') or_return
-						if since_exists {
+						if since_exists == true {
 							io.write_string(writer, "Since: ") or_return
 							io.write_int(writer, since) or_return
 						}
-						if deprecated_since_exists {
+						if deprecated_since_exists == true {
 							if since_exists {
 								io.write_string(writer, "; ") or_return
 							}
