@@ -300,6 +300,7 @@ output_write_interface :: proc(
 			io.write_string(writer, interface_name) or_return
 			io.write_string(writer, ": ^") or_return
 			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, "_struct") or_return
 
 			for arg := _proc.arg; arg != nil; arg = arg.next {
 				switch arg.type {
@@ -358,6 +359,7 @@ output_write_interface :: proc(
 							arg_interface_name = arg.interface
 						}
 						io.write_string(writer, arg_interface_name) or_return
+						io.write_string(writer, "_struct") or_return
 					}
 				case:
 					fmt.eprintfln("Invalid Arg Type: %s", arg.type)
@@ -512,7 +514,7 @@ output_write_interface :: proc(
 		event_count: int
 
 		if interface.request != nil {
-			io.write_string(writer, fmt.aprintf("@(rodata)\n%s_requests := [?]message {{\n", interface.name, allocator = scratch_allocator)) or_return
+			io.write_string(writer, fmt.aprintf("%s_requests := [?]message {{\n", interface.name, allocator = scratch_allocator)) or_return
 			for request := interface.request; request != nil; request = request.next {
 				method_count += 1
 				io.write_string(writer, "\t{ \"") or_return
@@ -522,16 +524,132 @@ output_write_interface :: proc(
 					io.write_int(writer, since) or_return
 				}
 				for arg := request.arg; arg != nil; arg = arg.next {
+					if arg.allow_null == true {
+						io.write_rune(writer, '?') or_return
+					}
+					switch arg.type {
+					case "int": io.write_rune(writer, 'i') or_return
+					case "uint": io.write_rune(writer, 'u') or_return
+					case "fixed": io.write_rune(writer, 'f') or_return
+					case "string": io.write_rune(writer, 's') or_return
+					case "object":
+						if len(arg.interface) == 0 {
+							io.write_string(writer, "suo") or_return
+						}
+						else {
+							io.write_rune(writer, 'o') or_return
+						}
+					case "new_id":
+						if len(arg.interface) == 0 {
+							io.write_string(writer, "sun") or_return
+						}
+						else {
+							io.write_rune(writer, 'n') or_return
+						}
+					case "array": io.write_rune(writer, 'a') or_return
+					case "fd": io.write_rune(writer, 'h') or_return
+					}
 				}
 				io.write_string(writer, "\", {") or_return
-				for arg := request.arg; arg != nil; arg = arg.next {
+				if request.arg != nil {
+					io.write_rune(writer, ' ') or_return
+					for arg := request.arg; arg != nil; {
+						switch arg.type {
+						case "new_id", "object":
+							if len(arg.interface) == 0 {
+								io.write_string(writer, "nil, nil, nil") or_return
+							}
+							else {
+								io.write_string(writer, fmt.aprintf("&%s_interface", arg.interface, allocator = scratch_allocator)) or_return
+							}
+						case:
+							io.write_string(writer, "nil") or_return
+						}
+
+						if arg.next == nil {
+							break
+						}
+						else {
+							arg = arg.next
+							io.write_string(writer, ", ") or_return
+						}
+					}
+					io.write_rune(writer, ' ') or_return
 				}
 				io.write_string(writer, "} },\n") or_return
 			}
 			io.write_string(writer, "}\n") or_return
 		}
 
-		io.write_string(writer, fmt.aprintf("@(rodata)\n%s_interface := interface {{\n\tname = \"%s\",\n\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
+		if interface.event != nil {
+			io.write_string(writer, fmt.aprintf("%s_events := [?]message {{\n", interface.name, allocator = scratch_allocator)) or_return
+			for event := interface.event; event != nil; event = event.next {
+				event_count += 1
+				io.write_string(writer, "\t{ \"") or_return
+				io.write_string(writer, event.name) or_return
+				io.write_string(writer, "\", \"") or_return
+				if since, since_exists := event.since.?; since_exists == true && since > 1 {
+					io.write_int(writer, since) or_return
+				}
+				for arg := event.arg; arg != nil; arg = arg.next {
+					if arg.allow_null == true {
+						io.write_rune(writer, '?') or_return
+					}
+					switch arg.type {
+					case "int": io.write_rune(writer, 'i') or_return
+					case "uint": io.write_rune(writer, 'u') or_return
+					case "fixed": io.write_rune(writer, 'f') or_return
+					case "string": io.write_rune(writer, 's') or_return
+					case "object":
+						if len(arg.interface) == 0 {
+							io.write_string(writer, "suo") or_return
+						}
+						else {
+							io.write_rune(writer, 'o') or_return
+						}
+					case "new_id":
+						if len(arg.interface) == 0 {
+							io.write_string(writer, "sun") or_return
+						}
+						else {
+							io.write_rune(writer, 'n') or_return
+						}
+					case "array": io.write_rune(writer, 'a') or_return
+					case "fd": io.write_rune(writer, 'h') or_return
+					}
+				}
+				io.write_string(writer, "\", {") or_return
+				if event.arg != nil {
+					io.write_rune(writer, ' ') or_return
+					for arg := event.arg; arg != nil; {
+						switch arg.type {
+						case "new_id", "object":
+							if len(arg.interface) == 0 {
+								io.write_string(writer, "nil, nil, nil") or_return
+							}
+							else {
+								io.write_string(writer, fmt.aprintf("&%s_interface", arg.interface, allocator = scratch_allocator)) or_return
+							}
+						case:
+							io.write_string(writer, "nil") or_return
+						}
+
+						if arg.next == nil {
+							break
+						}
+						else {
+							arg = arg.next
+							io.write_string(writer, ", ") or_return
+						}
+					}
+					io.write_rune(writer, ' ') or_return
+				}
+				io.write_string(writer, "} },\n") or_return
+			}
+			io.write_string(writer, "}\n") or_return
+		}
+
+		io.write_string(writer, fmt.aprintf("%s_interface := interface {{\n\tname = \"%s\",\n\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
 		io.write_string(writer, "\tmethod_count = ") or_return
 		io.write_int(writer, method_count) or_return
 		io.write_string(writer, ",\n\tmethods = ") or_return
