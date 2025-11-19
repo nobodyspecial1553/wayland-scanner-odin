@@ -217,8 +217,6 @@ print_help :: proc() -> ! {
 
 [Flags]:
 	-o <output_file_path>: Sets the output path (appends .odin if it isn't present)
-	-ffi (default): Generates odin ffi linked against 'system:wayland-(client/server)'
-	-no-ffi: Disables ffi generation, useful if generating each protocol file individually
 	-client (default): Generates wayland client odin file
 	-server: Generates wayland server odin file
 	-h: Prints help message and exits`, os.args[0], os.args[0])

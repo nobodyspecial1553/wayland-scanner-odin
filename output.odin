@@ -142,21 +142,32 @@ output_write_interface :: proc(
 
 			io.write_rune(writer, '\t') or_return
 			io.write_string(writer, _proc.name) or_return
-			io.write_string(writer, " :: #type proc \"c\" (data: rawptr, ") or_return
-			io.write_string(writer, interface_name) or_return 
-			io.write_string(writer, ": ^") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, "_struct") or_return
+			io.write_string(writer, " :: #type proc \"c\" (") or_return
+			when T == ^XML_Parser_Event {
+				io.write_string(writer, "_data: rawptr, ") or_return
+				io.write_string(writer, interface_name) or_return 
+				io.write_string(writer, ": ^") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, "_struct") or_return
+			}
+			else when T == ^XML_Parser_Request {
+				io.write_string(writer, "_client: ^client, _resource: ^resource") or_return
+			}
+			else {
+				#panic("Invalid Type!")
+			}
 
 			for arg := _proc.arg; arg != nil; arg = arg.next {
-				io.write_string(writer, ", ") or_return
-				io.write_string(writer, arg.name) or_return
-				io.write_string(writer, ": ") or_return
-
 				switch arg.type {
 				case "int", "fd":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "i32") or_return
 				case "uint":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					if len(arg._enum) == 0 {
 						io.write_string(writer, "u32") or_return
 					}
@@ -166,26 +177,69 @@ output_write_interface :: proc(
 						io.write_string(writer, arg._enum) or_return
 					}
 				case "fixed":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "fixed") or_return
 				case "string": // cstring
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "cstring") or_return
 				case "array":
+					io.write_string(writer, ", ") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, ": ") or_return
 					io.write_string(writer, "^array") or_return
 				case "new_id": // specific interface struct or generic interface followed by version
 					if len(arg.interface) == 0 {
-						io.write_string(writer, "^interface") or_return
+						when T == ^XML_Parser_Event {
+							io.write_string(writer, ", ") or_return
+							io.write_string(writer, arg.name) or_return
+							io.write_string(writer, ": ^interface") or_return
+						}
+						else when T == ^XML_Parser_Request {
+							io.write_string(writer, ", interface: cstring, version: u32, id: u32") or_return
+						}
+						else {
+							#panic("Invalid Type!")
+						}
 					}
 					else {
-						io.write_rune(writer, '^') or_return
-						io.write_string(writer, arg.interface) or_return
+						when T == ^XML_Parser_Event {
+							io.write_string(writer, ", ") or_return
+							io.write_string(writer, arg.name) or_return
+							io.write_string(writer, ": ^") or_return
+							io.write_string(writer, arg.interface) or_return
+						}
+						else when T == ^XML_Parser_Request {
+							io.write_string(writer, ", ") or_return
+							io.write_string(writer, arg.name) or_return
+							io.write_string(writer, ": u32") or_return
+						}
+						else {
+							#panic("Invalid Type!")
+						}
 					}
 				case "object":
-					if len(arg.interface) == 0 {
-						io.write_string(writer, "^object") or_return
+					when T == ^XML_Parser_Event {
+						io.write_string(writer, ", ") or_return
+						io.write_string(writer, arg.name) or_return
+						io.write_string(writer, ": ^") or_return
+						if len(arg.interface) == 0 {
+							io.write_string(writer, "object") or_return
+						}
+						else {
+							io.write_string(writer, arg.interface) or_return
+						}
+					}
+					else when T == ^XML_Parser_Request {
+						io.write_string(writer, ", ") or_return
+						io.write_string(writer, arg.name) or_return
+						io.write_string(writer, ": ^resource") or_return
 					}
 					else {
-						io.write_rune(writer, '^') or_return
-						io.write_string(writer, arg.interface) or_return
+						#panic("Invalid Type!")
 					}
 				case:
 					fmt.eprintfln("Invalid Arg Type: %s", arg.type)
