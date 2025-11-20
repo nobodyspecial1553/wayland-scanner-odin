@@ -253,17 +253,25 @@ output_write_interface :: proc(
 		}
 		io.write_string(writer, "}\n") or_return
 
-		io.write_string(writer, interface_name) or_return
-		io.write_string(writer, "_add_listener :: proc(") or_return
-		io.write_string(writer, interface_name) or_return
-		io.write_string(writer, ": ^") or_return
-		io.write_string(writer, interface_name) or_return
-		io.write_string(writer, ", ") or_return
-		io.write_string(writer, "listener: ^") or_return
-		io.write_string(writer, interface_name) or_return
-		io.write_string(writer, "_listener, data: rawptr) -> (success: i32) {\n\treturn proxy_add_listener(cast(^proxy)") or_return
-		io.write_string(writer, interface_name) or_return
-		io.write_string(writer, ", cast(^rawptr)listener, data)\n}\n\n") or_return
+		when T == ^XML_Parser_Event {
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, "_add_listener :: proc(") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ": ^") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ", ") or_return
+			io.write_string(writer, "listener: ^") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, "_listener, data: rawptr) -> (success: i32) {\n\treturn proxy_add_listener(cast(^proxy)") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, ", cast(^rawptr)listener, data)\n}\n\n") or_return
+		}
+		else when T == ^XML_Parser_Request {
+			io.write_rune(writer, '\n') or_return
+		}
+		else {
+			#panic("Invalid Type!")
+		}
 
 		return nil
 	}
@@ -271,7 +279,6 @@ output_write_interface :: proc(
 		writer: io.Writer,
 		_proc: $T,
 		interface_name: string,
-		write_destroy_request_if_missing: bool,
 		scratch_allocator := context.temp_allocator,
 	) -> (
 		error: Output_Error,
@@ -289,7 +296,9 @@ output_write_interface :: proc(
 		}
 
 		for ; _proc != nil; _proc = _proc.next {
-			ret_arg: ^XML_Parser_Arg
+			when T == ^XML_Parser_Request {
+				ret_arg: ^XML_Parser_Arg
+			}
 			proc_index_name_string: string
 
 			if _proc.name == "destroy" {
@@ -348,14 +357,25 @@ output_write_interface :: proc(
 				proc_index += 1
 			}
 
-			io.write_string(writer, interface_name) or_return
-			io.write_rune(writer, '_') or_return
-			io.write_string(writer, _proc.name) or_return
-			io.write_string(writer, " :: proc(") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, ": ^") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, "_struct") or_return
+			when T == ^XML_Parser_Request {
+				io.write_string(writer, interface_name) or_return
+				io.write_rune(writer, '_') or_return
+				io.write_string(writer, _proc.name) or_return
+				io.write_string(writer, " :: proc(") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, ": ^") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, "_struct") or_return
+			}
+			else when T == ^XML_Parser_Event {
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, "_send_") or_return
+				io.write_string(writer, _proc.name) or_return
+				io.write_string(writer, " :: proc(_resource: ^resource") or_return
+			}
+			else {
+				#panic("Invalid Type!")
+			}
 
 			for arg := _proc.arg; arg != nil; arg = arg.next {
 				switch arg.type {
@@ -379,42 +399,57 @@ output_write_interface :: proc(
 				case "fixed":
 					io.write_string(writer, ", ") or_return
 					io.write_string(writer, arg.name) or_return
-					io.write_string(writer, ": ") or_return
-					io.write_string(writer, "fixed") or_return
+					io.write_string(writer, ": fixed") or_return
 				case "string": // cstring
 					io.write_string(writer, ", ") or_return
 					io.write_string(writer, arg.name) or_return
-					io.write_string(writer, ": ") or_return
-					io.write_string(writer, "cstring") or_return
+					io.write_string(writer, ": cstring") or_return
 				case "array":
 					io.write_string(writer, ", ") or_return
 					io.write_string(writer, arg.name) or_return
-					io.write_string(writer, ": ") or_return
-					io.write_string(writer, "^array") or_return
+					io.write_string(writer, ": ^array") or_return
 				case "new_id": // specific interface struct or generic interface followed by version
-					ret_arg = arg
+					when T == ^XML_Parser_Request {
+						ret_arg = arg
 
-					if len(arg.interface) == 0 {
-						io.write_string(writer, ", interface: ^interface, version: u32") or_return
+						if len(arg.interface) == 0 {
+							io.write_string(writer, ", interface: ^interface, version: u32") or_return
+						}
+					}
+					else when T == ^XML_Parser_Event {
+						io.write_string(writer, ", ") or_return
+						io.write_string(writer, arg.name) or_return
+						io.write_string(writer, ": ^resource") or_return
+					}
+					else {
+						#panic("Invalid Type!")
 					}
 				case "object":
 					io.write_string(writer, ", ") or_return
 					io.write_string(writer, arg.name) or_return
 					io.write_string(writer, ": ") or_return
-					if len(arg.interface) == 0 {
-						io.write_string(writer, "^object") or_return
-					}
-					else {
-						arg_interface_name: string
-						io.write_rune(writer, '^') or_return
-						if arg.interface[:3] == "wl_" {
-							arg_interface_name = arg.interface[3:]
+					when T == ^XML_Parser_Request {
+						if len(arg.interface) == 0 {
+							io.write_string(writer, "^object") or_return
 						}
 						else {
-							arg_interface_name = arg.interface
+							arg_interface_name: string
+							io.write_rune(writer, '^') or_return
+							if arg.interface[:3] == "wl_" {
+								arg_interface_name = arg.interface[3:]
+							}
+							else {
+								arg_interface_name = arg.interface
+							}
+							io.write_string(writer, arg_interface_name) or_return
+							io.write_string(writer, "_struct") or_return
 						}
-						io.write_string(writer, arg_interface_name) or_return
-						io.write_string(writer, "_struct") or_return
+					}
+					else when T == ^XML_Parser_Event {
+						io.write_string(writer, "^resource") or_return
+					}
+					else {
+						#panic("Invalid Type!")
 					}
 				case:
 					fmt.eprintfln("Invalid Arg Type: %s", arg.type)
@@ -422,91 +457,110 @@ output_write_interface :: proc(
 				}
 			}
 			io.write_string(writer, ")") or_return
-			if ret_arg != nil {
-				io.write_string(writer, " -> (") or_return
-				io.write_string(writer, ret_arg.name) or_return
-				io.write_string(writer, ": ") or_return
-				if len(ret_arg.interface) != 0 {
-					ret_arg_interface_name: string
+			when T == ^XML_Parser_Request {
+				if ret_arg != nil {
+					io.write_string(writer, " -> (") or_return
+					io.write_string(writer, ret_arg.name) or_return
+					io.write_string(writer, ": ") or_return
+					if len(ret_arg.interface) != 0 {
+						ret_arg_interface_name: string
 
-					io.write_rune(writer, '^') or_return
-					if ret_arg.interface[:3] == "wl_" {
-						ret_arg_interface_name = ret_arg.interface[3:]
+						io.write_rune(writer, '^') or_return
+						if ret_arg.interface[:3] == "wl_" {
+							ret_arg_interface_name = ret_arg.interface[3:]
+						}
+						else {
+							ret_arg_interface_name = ret_arg.interface
+						}
+						io.write_string(writer, ret_arg_interface_name) or_return
+						io.write_rune(writer, ')') or_return
 					}
 					else {
-						ret_arg_interface_name = ret_arg.interface
+						io.write_string(writer, "rawptr)") or_return
 					}
-					io.write_string(writer, ret_arg_interface_name) or_return
-					io.write_rune(writer, ')') or_return
-				}
-				else {
-					io.write_string(writer, "rawptr)") or_return
 				}
 			}
 			io.write_string(writer, " {\n\t") or_return
-			if ret_arg != nil {
-				io.write_string(writer, "return cast(") or_return
-				if len(ret_arg.interface) == 0 {
-					io.write_string(writer, "rawptr)") or_return
-				}
-				else {
-					ret_arg_interface_name: string
-
-					io.write_rune(writer, '^') or_return
-					if ret_arg.interface[:3] == "wl_" {
-						ret_arg_interface_name = ret_arg.interface[3:]
+			when T == ^XML_Parser_Request {
+				if ret_arg != nil {
+					io.write_string(writer, "return cast(") or_return
+					if len(ret_arg.interface) == 0 {
+						io.write_string(writer, "rawptr)") or_return
 					}
 					else {
-						ret_arg_interface_name = ret_arg.interface
-					}
-					io.write_string(writer, ret_arg_interface_name) or_return
-					io.write_string(writer, "_struct") or_return // Resolves potential naming conflicts
-					io.write_rune(writer, ')') or_return
-				}
-			}
-			io.write_string(writer, "proxy_marshal_flags(cast(^proxy)") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, ", ") or_return
-			io.write_string(writer, proc_index_name_string) or_return
-			io.write_string(writer, ", ") or_return
-			if ret_arg != nil {
-				if len(ret_arg.interface) == 0 {
-					io.write_string(writer, "interface, version") or_return
-				}
-				else {
-					ret_arg_interface_name: string
+						ret_arg_interface_name: string
 
-					if ret_arg.interface[:3] == "wl_" {
-						ret_arg_interface_name = ret_arg.interface[3:]
+						io.write_rune(writer, '^') or_return
+						if ret_arg.interface[:3] == "wl_" {
+							ret_arg_interface_name = ret_arg.interface[3:]
+						}
+						else {
+							ret_arg_interface_name = ret_arg.interface
+						}
+						io.write_string(writer, ret_arg_interface_name) or_return
+						io.write_string(writer, "_struct") or_return // Resolves potential naming conflicts
+						io.write_rune(writer, ')') or_return
+					}
+				}
+				io.write_string(writer, "proxy_marshal_flags(cast(^proxy)") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, ", ") or_return
+				io.write_string(writer, proc_index_name_string) or_return
+				io.write_string(writer, ", ") or_return
+				if ret_arg != nil {
+					if len(ret_arg.interface) == 0 {
+						io.write_string(writer, "interface, version") or_return
 					}
 					else {
-						ret_arg_interface_name = ret_arg.interface
+						ret_arg_interface_name: string
+
+						if ret_arg.interface[:3] == "wl_" {
+							ret_arg_interface_name = ret_arg.interface[3:]
+						}
+						else {
+							ret_arg_interface_name = ret_arg.interface
+						}
+						io.write_string(writer, ret_arg_interface_name) or_return
+						io.write_string(writer, "_interface, ") or_return
+						io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
+						io.write_string(writer, interface_name) or_return
 					}
-					io.write_string(writer, ret_arg_interface_name) or_return
-					io.write_string(writer, "_interface, ") or_return
+				}
+				else {
+					io.write_string(writer, "nil, ") or_return
 					io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
 					io.write_string(writer, interface_name) or_return
 				}
+				switch _proc.type {
+				case "destructor":
+					io.write_string(writer, ", MARSHAL_FLAG_DESTROY") or_return
+				case "":
+					io.write_string(writer, ", 0") or_return
+				case:
+					fmt.eprintfln("Invalid Proc Type: ", _proc.type)
+					return Output_Validation_Error.Arg_Invalid_Type
+				}
+			}
+			else when T == ^XML_Parser_Event {
+				io.write_string(writer, "resource_post_event(resource, ") or_return
+				io.write_string(writer, proc_index_name_string) or_return
 			}
 			else {
-				io.write_string(writer, "nil, ") or_return
-				io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
-				io.write_string(writer, interface_name) or_return
-			}
-			switch _proc.type {
-			case "destructor":
-				io.write_string(writer, ", MARSHAL_FLAG_DESTROY") or_return
-			case "":
-				io.write_string(writer, ", 0") or_return
-			case:
-				fmt.eprintfln("Invalid Proc Type: ", _proc.type)
-				return Output_Validation_Error.Arg_Invalid_Type
+				#panic("Invalid Type!")
 			}
 			for arg := _proc.arg; arg != nil; arg = arg.next {
 				io.write_string(writer, ", ") or_return
 				switch arg.type {
 				case "new_id":
-					io.write_string(writer, "interface.name, version, nil") or_return
+					when T == ^XML_Parser_Request {
+						io.write_string(writer, "interface.name, version, nil") or_return
+					}
+					else when T == ^XML_Parser_Event {
+						fallthrough
+					}
+					else {
+						#panic("Invalid Type!")
+					}
 				case:
 					io.write_string(writer, arg.name) or_return
 				}
@@ -514,15 +568,17 @@ output_write_interface :: proc(
 			io.write_string(writer, ")\n}\n\n") or_return
 		}
 
-		if has_destroy_request == false && write_destroy_request_if_missing == true {
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, "_destroy :: proc(") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, ": ^") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, ") {\n\tproxy_destroy(cast(^proxy)") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, ")\n}\n") or_return
+		when T == ^XML_Parser_Request {
+			if has_destroy_request == false {
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, "_destroy :: proc(") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, ": ^") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, ") {\n\tproxy_destroy(cast(^proxy)") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_string(writer, ")\n}\n") or_return
+			}
 		}
 
 		io.write_rune(writer, '\n') or_return
@@ -727,14 +783,16 @@ output_write_interface :: proc(
 		io.write_string(writer, "}\n\n") or_return
 	}
 
-	io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-	io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+	if .Is_Server not_in args.property_flags {
+		io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
-	io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc(%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-	io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc(%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
-	io.write_string(writer, fmt.aprintf("%s_get_version :: proc(%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-	io.write_string(writer, fmt.aprintf("\treturn proxy_get_version((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("%s_get_version :: proc(%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("\treturn proxy_get_version((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+	}
 
 	for _enum := interface._enum; _enum != nil; _enum = _enum.next {
 		enum_name: string
@@ -807,11 +865,11 @@ output_write_interface :: proc(
 
 	if .Is_Server in args.property_flags {
 		write_proc_listeners(writer, interface.request, interface_name, scratch_allocator) or_return
-		write_proc_interfaces(writer, interface.event, interface_name, false, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.event, interface_name, scratch_allocator) or_return
 	}
 	else {
 		write_proc_listeners(writer, interface.event, interface_name, scratch_allocator) or_return
-		write_proc_interfaces(writer, interface.request, interface_name, true, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.request, interface_name, scratch_allocator) or_return
 	}
 
 	return nil
