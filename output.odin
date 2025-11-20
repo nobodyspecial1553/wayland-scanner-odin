@@ -172,9 +172,25 @@ output_write_interface :: proc(
 						io.write_string(writer, "u32") or_return
 					}
 					else {
-						io.write_string(writer, interface_name) or_return
-						io.write_rune(writer, '_') or_return
-						io.write_string(writer, arg._enum) or_return
+						period_index: int
+
+						period_index = strings.index_byte(arg._enum, '.')
+						if period_index < 0 {
+							io.write_string(writer, interface_name) or_return
+							io.write_rune(writer, '_') or_return
+							io.write_string(writer, arg._enum) or_return
+						}
+						else {
+							new_enum_string: string
+
+							new_enum_string, _ = strings.replace_all(arg._enum, ".", "_", scratch_allocator)
+							if new_enum_string[:3] == "wl_" {
+								io.write_string(writer, new_enum_string[3:]) or_return
+							}
+							else {
+								io.write_string(writer, new_enum_string) or_return
+							}
+						}
 					}
 				case "fixed":
 					io.write_string(writer, ", ") or_return
@@ -392,9 +408,25 @@ output_write_interface :: proc(
 						io.write_string(writer, "u32") or_return
 					}
 					else {
-						io.write_string(writer, interface_name) or_return
-						io.write_rune(writer, '_') or_return
-						io.write_string(writer, arg._enum) or_return
+						period_index: int
+
+						period_index = strings.index_byte(arg._enum, '.')
+						if period_index < 0 {
+							io.write_string(writer, interface_name) or_return
+							io.write_rune(writer, '_') or_return
+							io.write_string(writer, arg._enum) or_return
+						}
+						else {
+							new_enum_string: string
+
+							new_enum_string, _ = strings.replace_all(arg._enum, ".", "_", scratch_allocator)
+							if new_enum_string[:3] == "wl_" {
+								io.write_string(writer, new_enum_string[3:]) or_return
+							}
+							else {
+								io.write_string(writer, new_enum_string) or_return
+							}
+						}
 					}
 				case "fixed":
 					io.write_string(writer, ", ") or_return
@@ -860,7 +892,38 @@ output_write_interface :: proc(
 			entry_name, _ = strings.to_screaming_snake_case(entry.name, scratch_allocator)
 			io.write_string(writer, fmt.aprintf("\t%s = %d,\n", entry_name, entry.value, allocator = scratch_allocator)) or_return
 		}
-		io.write_string(writer, "}\n\n") or_return
+		io.write_string(writer, "}\n") or_return
+		if .Is_Server not_in args.property_flags {
+			io.write_rune(writer, '\n') or_return
+		}
+		else {
+			io.write_string(writer, interface_name) or_return
+			io.write_rune(writer, '_') or_return
+			io.write_string(writer, _enum.name) or_return
+			io.write_string(writer, "_is_valid :: proc(value: ") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_rune(writer, '_') or_return
+			io.write_string(writer, _enum.name) or_return
+			io.write_string(writer, ", version: u32) -> (valid: bool) {\n\tswitch value {\n") or_return
+			for entry := _enum.entry; entry != nil; entry = entry.next {
+				io.write_string(writer, "\tcase .") or_return
+				io.write_string(writer, strings.to_screaming_snake_case(entry.name, scratch_allocator)) or_return
+				io.write_string(writer, ": return version >= ") or_return
+				if since, since_exists := entry.since.?; since_exists == true {
+					io.write_int(writer, since) or_return
+				}
+				else {
+					io.write_rune(writer, '1') or_return
+				}
+				if deprecated_since, deprecated_since_exists := entry.deprecated_since.?; deprecated_since_exists == true {
+					io.write_string(writer, " && version < ") or_return
+					io.write_int(writer, deprecated_since) or_return
+				}
+				io.write_rune(writer, '\n') or_return
+			}
+			io.write_string(writer, "\tcase:\n\t\treturn false\n") or_return
+			io.write_string(writer, "\t}\n}\n\n") or_return
+		}
 	}
 
 	if .Is_Server in args.property_flags {
