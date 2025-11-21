@@ -261,6 +261,7 @@ XML_Parser_Arg :: struct {
 	allow_null: bool,
 	since: Maybe(int),
 	deprecated_since: Maybe(int),
+	description: ^XML_Parser_Description,
 }
 
 XML_Parser_Enum :: struct {
@@ -280,6 +281,7 @@ XML_Parser_Entry :: struct {
 	value: int,
 	since: Maybe(int),
 	deprecated_since: Maybe(int),
+	description: ^XML_Parser_Description,
 }
 
 XML_Parse_Error :: enum {
