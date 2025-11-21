@@ -216,7 +216,7 @@ print_help :: proc() -> ! {
 %s is a tool for generating odin code from wayland protocol xml files
 
 [Flags]:
-	-o <output_file_path>: Sets the output path (appends .odin if it isn't present)
+	-o <output_file_path>: Sets the output path
 	-client (default): Generates wayland client odin file
 	-server: Generates wayland server odin file
 	-h: Prints help message and exits`, os.args[0], os.args[0])
