@@ -7,6 +7,9 @@ import "base:intrinsics"
 import "core:io"
 import "core:strings"
 import "core:mem"
+import big_math "core:math/big"
+
+log2 :: big_math.ilog2
 
 Output_Validation_Error :: enum {
 	None = 0,
@@ -1001,7 +1004,16 @@ output_write_interface :: proc(
 				io.write_rune(writer, '\n') or_return
 			}
 			entry_name, _ = strings.to_screaming_snake_case(entry.name, scratch_allocator)
-			io.write_string(writer, fmt.aprintf("\t%s = %d,\n", entry_name, entry.value, allocator = scratch_allocator)) or_return
+			io.write_rune(writer, '\t') or_return
+			io.write_string(writer, entry_name) or_return
+			io.write_string(writer, " = ") or_return
+			if _enum.bitfield == false {
+				io.write_int(writer, entry.value)
+			}
+			else {
+				io.write_int(writer, log2(entry.value))
+			}
+			io.write_string(writer, ",\n") or_return
 		}
 		io.write_string(writer, "}\n") or_return
 		if .Is_Server not_in args.property_flags {
