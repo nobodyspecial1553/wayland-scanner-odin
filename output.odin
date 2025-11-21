@@ -115,7 +115,30 @@ output_write_interface :: proc(
 					io.write_string(writer, "\t// @param '") or_return
 					io.write_string(writer, arg.name) or_return
 					io.write_string(writer, "' = \"") or_return
-					io.write_string(writer, arg.summary) or_return
+					if arg.description != nil {
+						if len(arg.description.content) != 0 {
+							io.write_string(writer, "\n") or_return
+						}
+						if len(arg.description.summary) != 0 {
+							io.write_rune(writer, '\t') or_return
+							if len(arg.description.content) != 0 {
+								io.write_string(writer, "Summary: ") or_return
+							}
+							io.write_string(writer, arg.description.summary) or_return
+							io.write_string(writer, "\n\n\t") or_return
+						}
+						for line in strings.split_lines_iterator(&arg.description.content) {
+							trimmed_line: string
+
+							trimmed_line = strings.trim_left(line, " \t")
+							io.write_rune(writer, '\t') or_return
+							io.write_string(writer, trimmed_line) or_return
+							io.write_rune(writer, '\n') or_return
+						}
+					}
+					else if len(arg.summary) != 0 {
+						io.write_string(writer, arg.summary) or_return
+					}
 					io.write_rune(writer, '"') or_return
 
 					since, since_exists = arg.since.?
@@ -868,15 +891,39 @@ output_write_interface :: proc(
 		for entry := _enum.entry; entry != nil; entry = entry.next {
 			entry_name: string
 
-			if len(entry.summary) != 0 {
+			if entry.description != nil {
 				io.write_string(writer, "\t/*\n") or_return
-				for line in strings.split_lines_iterator(&entry.summary) {
+				if len(entry.description.summary) != 0 {
+					io.write_string(writer, "\t\tSummary: ") or_return
+					io.write_string(writer, entry.description.summary) or_return
+					io.write_rune(writer, '\n') or_return
+					if len(entry.description.content) != 0 {
+						io.write_rune(writer, '\n')
+					}
+				}
+				for line in strings.split_lines_iterator(&entry.description.content) {
+					trimmed_line: string
+
+					trimmed_line = strings.trim_left(line, " \t")
 					io.write_string(writer, "\t\t") or_return
-					io.write_string(writer, line) or_return
+					io.write_string(writer, trimmed_line) or_return
 					io.write_rune(writer, '\n') or_return
 				}
 				io.write_string(writer, "\t*/\n") or_return
 			}
+			else if len(entry.summary) != 0 {
+				io.write_string(writer, "\t/*\n") or_return
+				for line in strings.split_lines_iterator(&entry.summary) {
+					trimmed_line: string
+
+					trimmed_line = strings.trim_left(line, " \t")
+					io.write_string(writer, "\t\t Summary: ") or_return
+					io.write_string(writer, trimmed_line) or_return
+					io.write_rune(writer, '\n') or_return
+				}
+				io.write_string(writer, "\t*/\n") or_return
+			}
+
 			if since, since_exists := entry.since.?; since_exists == true {
 				io.write_rune(writer, '\t') or_return
 				io.write_string(writer, "// Since Version: ") or_return
