@@ -8,10 +8,6 @@ import "core:strconv"
 import "core:io"
 import "core:reflect"
 
-// Reminder of where log2 is
-// import "base:intrinsics"
-// log2 :: intrinsics.constant_log2
-
 XML_Error :: union #shared_nil {
 	io.Error,
 	XML_Token_Error,
