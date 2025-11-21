@@ -106,61 +106,63 @@ output_write_interface :: proc(
 			}
 
 			for arg := _proc.arg; arg != nil; arg = arg.next {
-				if len(arg.summary) != 0 {
-					since: int
-					since_exists: bool
-					deprecated_since: int
-					deprecated_since_exists: bool
+				since: int
+				since_exists: bool
+				deprecated_since: int
+				deprecated_since_exists: bool
 
-					io.write_string(writer, "\t// @param '") or_return
-					io.write_string(writer, arg.name) or_return
-					io.write_string(writer, "' = \"") or_return
-					if arg.description != nil {
-						if len(arg.description.content) != 0 {
-							io.write_string(writer, "\n") or_return
-						}
-						if len(arg.description.summary) != 0 {
-							io.write_rune(writer, '\t') or_return
-							if len(arg.description.content) != 0 {
-								io.write_string(writer, "Summary: ") or_return
-							}
-							io.write_string(writer, arg.description.summary) or_return
-							io.write_string(writer, "\n\n\t") or_return
-						}
-						for line in strings.split_lines_iterator(&arg.description.content) {
-							trimmed_line: string
-
-							trimmed_line = strings.trim_left(line, " \t")
-							io.write_rune(writer, '\t') or_return
-							io.write_string(writer, trimmed_line) or_return
-							io.write_rune(writer, '\n') or_return
-						}
-					}
-					else if len(arg.summary) != 0 {
-						io.write_string(writer, arg.summary) or_return
-					}
-					io.write_rune(writer, '"') or_return
-
-					since, since_exists = arg.since.?
-					deprecated_since, deprecated_since_exists = arg.deprecated_since.?
-					if since_exists || deprecated_since_exists {
-						io.write_rune(writer, '(') or_return
-						if since_exists == true {
-							io.write_string(writer, "Since: ") or_return
-							io.write_int(writer, since) or_return
-						}
-						if deprecated_since_exists == true {
-							if since_exists {
-								io.write_string(writer, "; ") or_return
-							}
-							io.write_string(writer, "Deprecated Since: ") or_return
-							io.write_int(writer, deprecated_since) or_return
-						}
-						io.write_rune(writer, ')') or_return
-					}
-
-					io.write_rune(writer, '\n') or_return
+				if len(arg.summary) == 0 && arg.description == nil {
+					continue
 				}
+
+				io.write_string(writer, "\t// @param '") or_return
+				io.write_string(writer, arg.name) or_return
+				io.write_string(writer, "' = \"") or_return
+				if arg.description != nil {
+					if len(arg.description.content) != 0 {
+						io.write_string(writer, "\n") or_return
+					}
+					if len(arg.description.summary) != 0 {
+						io.write_rune(writer, '\t') or_return
+						if len(arg.description.content) != 0 {
+							io.write_string(writer, "Summary: ") or_return
+						}
+						io.write_string(writer, arg.description.summary) or_return
+						io.write_string(writer, "\n\n\t") or_return
+					}
+					for line in strings.split_lines_iterator(&arg.description.content) {
+						trimmed_line: string
+
+						trimmed_line = strings.trim_left(line, " \t")
+						io.write_rune(writer, '\t') or_return
+						io.write_string(writer, trimmed_line) or_return
+						io.write_rune(writer, '\n') or_return
+					}
+				}
+				else if len(arg.summary) != 0 {
+					io.write_string(writer, arg.summary) or_return
+				}
+				io.write_rune(writer, '"') or_return
+
+				since, since_exists = arg.since.?
+				deprecated_since, deprecated_since_exists = arg.deprecated_since.?
+				if since_exists || deprecated_since_exists {
+					io.write_rune(writer, '(') or_return
+					if since_exists == true {
+						io.write_string(writer, "Since: ") or_return
+						io.write_int(writer, since) or_return
+					}
+					if deprecated_since_exists == true {
+						if since_exists {
+							io.write_string(writer, "; ") or_return
+						}
+						io.write_string(writer, "Deprecated Since: ") or_return
+						io.write_int(writer, deprecated_since) or_return
+					}
+					io.write_rune(writer, ')') or_return
+				}
+
+				io.write_rune(writer, '\n') or_return
 			}
 
 			io.write_rune(writer, '\t') or_return
@@ -370,6 +372,68 @@ output_write_interface :: proc(
 				io.write_string(writer, "// Deprecated Since Version: ") or_return
 				io.write_int(writer, deprecated_since) or_return
 				io.write_rune(writer, '\n') or_return
+			}
+
+			if _proc.arg != nil {
+				for arg := _proc.arg; arg != nil; arg = arg.next {
+					since: int
+					since_exists: bool
+					deprecated_since: int
+					deprecated_since_exists: bool
+
+					if len(arg.summary) == 0 && arg.description == nil {
+						continue
+					}
+
+					io.write_string(writer, "/* @param '") or_return
+					io.write_string(writer, arg.name) or_return
+					io.write_string(writer, "' = \"") or_return
+					if arg.description != nil {
+						if len(arg.description.content) != 0 {
+							io.write_string(writer, "\n") or_return
+						}
+						if len(arg.description.summary) != 0 {
+							io.write_rune(writer, '\t') or_return
+							if len(arg.description.content) != 0 {
+								io.write_string(writer, "Summary: ") or_return
+							}
+							io.write_string(writer, arg.description.summary) or_return
+							io.write_string(writer, "\n\n\t") or_return
+						}
+						for line in strings.split_lines_iterator(&arg.description.content) {
+							trimmed_line: string
+
+							trimmed_line = strings.trim_left(line, " \t")
+							io.write_rune(writer, '\t') or_return
+							io.write_string(writer, trimmed_line) or_return
+							io.write_rune(writer, '\n') or_return
+						}
+					}
+					else if len(arg.summary) != 0 {
+						io.write_string(writer, arg.summary) or_return
+					}
+					io.write_string(writer, "\"") or_return
+
+					since, since_exists = arg.since.?
+					deprecated_since, deprecated_since_exists = arg.deprecated_since.?
+					if since_exists || deprecated_since_exists {
+						io.write_rune(writer, '(') or_return
+						if since_exists == true {
+							io.write_string(writer, "Since: ") or_return
+							io.write_int(writer, since) or_return
+						}
+						if deprecated_since_exists == true {
+							if since_exists {
+								io.write_string(writer, "; ") or_return
+							}
+							io.write_string(writer, "Deprecated Since: ") or_return
+							io.write_int(writer, deprecated_since) or_return
+						}
+						io.write_rune(writer, ')') or_return
+					}
+
+					io.write_string(writer, " */\n") or_return
+				}
 			}
 
 			{
