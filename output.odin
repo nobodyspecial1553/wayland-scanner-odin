@@ -170,7 +170,7 @@ output_write_interface :: proc(
 
 			io.write_rune(writer, '\t') or_return
 			io.write_string(writer, _proc.name) or_return
-			io.write_string(writer, " :: #type proc \"c\" (") or_return
+			io.write_string(writer, ": #type proc \"c\" (") or_return
 			when T == ^XML_Parser_Event {
 				io.write_string(writer, "_data: rawptr, ") or_return
 				io.write_string(writer, interface_name) or_return 
@@ -646,12 +646,14 @@ output_write_interface :: proc(
 						io.write_string(writer, "_interface, ") or_return
 						io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
 						io.write_string(writer, interface_name) or_return
+						io.write_rune(writer, ')') or_return
 					}
 				}
 				else {
 					io.write_string(writer, "nil, ") or_return
 					io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
 					io.write_string(writer, interface_name) or_return
+					io.write_rune(writer, ')') or_return
 				}
 				switch _proc.type {
 				case "destructor":
@@ -907,13 +909,13 @@ output_write_interface :: proc(
 
 	if .Is_Server not_in args.property_flags {
 		io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-		io.write_string(writer, fmt.aprintf("\tproxy_set_user_data((^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("\tproxy_set_user_data(cast(^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
 		io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc(%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-		io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
 		io.write_string(writer, fmt.aprintf("%s_get_version :: proc(%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-		io.write_string(writer, fmt.aprintf("\treturn proxy_get_version((^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("\treturn proxy_get_version(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 	}
 
 	for _enum := interface._enum; _enum != nil; _enum = _enum.next {
