@@ -785,7 +785,7 @@ output_write_interface :: proc(
 					case "fd": io.write_rune(writer, 'h') or_return
 					}
 				}
-				io.write_string(writer, "\", {") or_return
+				io.write_string(writer, "\", raw_data(&[?]^interface {") or_return
 				if request.arg != nil {
 					io.write_rune(writer, ' ') or_return
 					for arg := request.arg; arg != nil; {
@@ -795,7 +795,14 @@ output_write_interface :: proc(
 								io.write_string(writer, "nil, nil, nil") or_return
 							}
 							else {
-								io.write_string(writer, fmt.aprintf("&%s_interface", arg.interface, allocator = scratch_allocator)) or_return
+								request_interface_name: string
+								if arg.interface[:3] == "wl_" {
+									request_interface_name = arg.interface[3:]
+								}
+								else {
+									request_interface_name = arg.interface
+								}
+								io.write_string(writer, fmt.aprintf("&%s_interface", request_interface_name, allocator = scratch_allocator)) or_return
 							}
 						case:
 							io.write_string(writer, "nil") or_return
@@ -811,7 +818,7 @@ output_write_interface :: proc(
 					}
 					io.write_rune(writer, ' ') or_return
 				}
-				io.write_string(writer, "} },\n") or_return
+				io.write_string(writer, "}) },\n") or_return
 			}
 			io.write_string(writer, "}\n") or_return
 		}
@@ -853,7 +860,7 @@ output_write_interface :: proc(
 					case "fd": io.write_rune(writer, 'h') or_return
 					}
 				}
-				io.write_string(writer, "\", {") or_return
+				io.write_string(writer, "\", raw_data(&[?]^interface {") or_return
 				if event.arg != nil {
 					io.write_rune(writer, ' ') or_return
 					for arg := event.arg; arg != nil; {
@@ -863,7 +870,14 @@ output_write_interface :: proc(
 								io.write_string(writer, "nil, nil, nil") or_return
 							}
 							else {
-								io.write_string(writer, fmt.aprintf("&%s_interface", arg.interface, allocator = scratch_allocator)) or_return
+								event_interface_name: string
+								if arg.interface[:3] == "wl_" {
+									event_interface_name = arg.interface[3:]
+								}
+								else {
+									event_interface_name = arg.interface
+								}
+								io.write_string(writer, fmt.aprintf("&%s_interface", event_interface_name, allocator = scratch_allocator)) or_return
 							}
 						case:
 							io.write_string(writer, "nil") or_return
@@ -879,7 +893,7 @@ output_write_interface :: proc(
 					}
 					io.write_rune(writer, ' ') or_return
 				}
-				io.write_string(writer, "} },\n") or_return
+				io.write_string(writer, "}) },\n") or_return
 			}
 			io.write_string(writer, "}\n") or_return
 		}
