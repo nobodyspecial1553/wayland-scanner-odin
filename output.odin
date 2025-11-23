@@ -251,10 +251,19 @@ output_write_interface :: proc(
 					}
 					else {
 						when T == ^XML_Parser_Event {
+							arg_interface_name: string
+
+							if arg.interface[:3] == "wl_" {
+								arg_interface_name = arg.interface[3:]
+							}
+							else {
+								arg_interface_name = arg.interface
+							}
+
 							io.write_string(writer, ", ") or_return
 							io.write_string(writer, arg.name) or_return
 							io.write_string(writer, ": ^") or_return
-							io.write_string(writer, arg.interface) or_return
+							io.write_string(writer, arg_interface_name) or_return
 						}
 						else when T == ^XML_Parser_Request {
 							io.write_string(writer, ", ") or_return
@@ -274,7 +283,16 @@ output_write_interface :: proc(
 							io.write_string(writer, "object") or_return
 						}
 						else {
-							io.write_string(writer, arg.interface) or_return
+							arg_interface_name: string
+
+							if arg.interface[:3] == "wl_" {
+								arg_interface_name = arg.interface[3:]
+							}
+							else {
+								arg_interface_name = arg.interface
+							}
+
+							io.write_string(writer, arg_interface_name) or_return
 						}
 					}
 					else when T == ^XML_Parser_Request {
