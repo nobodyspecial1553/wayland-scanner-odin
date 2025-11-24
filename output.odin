@@ -483,7 +483,7 @@ output_write_interface :: proc(
 
 			when T == ^XML_Parser_Request {
 				io.write_string(writer, interface_name) or_return
-				io.write_rune(writer, '_') or_return
+				io.write_string(writer, "_request_") or_return
 				io.write_string(writer, _proc.name) or_return
 				io.write_string(writer, " :: proc(") or_return
 				io.write_string(writer, interface_name) or_return
@@ -718,7 +718,7 @@ output_write_interface :: proc(
 		when T == ^XML_Parser_Request {
 			if has_destroy_request == false {
 				io.write_string(writer, interface_name) or_return
-				io.write_string(writer, "_destroy :: proc(") or_return
+				io.write_string(writer, "_request_destroy :: proc(") or_return
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, ": ^") or_return
 				io.write_string(writer, interface_name) or_return
