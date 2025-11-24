@@ -1044,6 +1044,10 @@ output_write_interface :: proc(
 			}
 			entry_name, _ = strings.to_screaming_snake_case(entry.name, scratch_allocator)
 			io.write_rune(writer, '\t') or_return
+			switch entry_name[0] {
+			case '0'..='9':
+				io.write_rune(writer, '_') or_return
+			}
 			io.write_string(writer, entry_name) or_return
 			io.write_string(writer, " = ") or_return
 			if _enum.bitfield == false {
