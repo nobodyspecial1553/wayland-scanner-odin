@@ -317,7 +317,7 @@ output_write_interface :: proc(
 
 		when T == ^XML_Parser_Event {
 			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, "_add_listener :: proc(") or_return
+			io.write_string(writer, "_add_listener :: proc \"c\" (") or_return
 			io.write_string(writer, interface_name) or_return
 			io.write_string(writer, ": ^") or_return
 			io.write_string(writer, interface_name) or_return
@@ -485,7 +485,7 @@ output_write_interface :: proc(
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, "_request_") or_return
 				io.write_string(writer, _proc.name) or_return
-				io.write_string(writer, " :: proc(") or_return
+				io.write_string(writer, " :: proc \"c\" (") or_return
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, ": ^") or_return
 				io.write_string(writer, interface_name) or_return
@@ -495,7 +495,7 @@ output_write_interface :: proc(
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, "_send_") or_return
 				io.write_string(writer, _proc.name) or_return
-				io.write_string(writer, " :: proc(_resource: ^resource") or_return
+				io.write_string(writer, " :: proc \"c\" (_resource: ^resource") or_return
 			}
 			else {
 				#panic("Invalid Type!")
@@ -718,7 +718,7 @@ output_write_interface :: proc(
 		when T == ^XML_Parser_Request {
 			if has_destroy_request == false {
 				io.write_string(writer, interface_name) or_return
-				io.write_string(writer, "_request_destroy :: proc(") or_return
+				io.write_string(writer, "_request_destroy :: proc \"c\" (") or_return
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, ": ^") or_return
 				io.write_string(writer, interface_name) or_return
@@ -945,13 +945,13 @@ output_write_interface :: proc(
 	}
 
 	if .Is_Server not_in args.property_flags {
-		io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc(%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc \"c\" (%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
 		io.write_string(writer, fmt.aprintf("\tproxy_set_user_data(cast(^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
-		io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc(%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc \"c\" (%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
 		io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 
-		io.write_string(writer, fmt.aprintf("%s_get_version :: proc(%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		io.write_string(writer, fmt.aprintf("%s_get_version :: proc \"c\" (%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
 		io.write_string(writer, fmt.aprintf("\treturn proxy_get_version(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 	}
 
@@ -1066,7 +1066,7 @@ output_write_interface :: proc(
 			io.write_string(writer, interface_name) or_return
 			io.write_rune(writer, '_') or_return
 			io.write_string(writer, _enum.name) or_return
-			io.write_string(writer, "_is_valid :: proc(value: ") or_return
+			io.write_string(writer, "_is_valid :: proc \"c\" (value: ") or_return
 			io.write_string(writer, interface_name) or_return
 			io.write_rune(writer, '_') or_return
 			io.write_string(writer, _enum.name) or_return
