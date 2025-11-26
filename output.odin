@@ -41,6 +41,24 @@ output_write_protocol :: proc(
 	context.allocator = mem.panic_allocator()
 	context.temp_allocator = scratch_allocator
 
+	if .Generate_Interface_FFI in args.property_flags || .Generate_Proc_FFI in args.property_flags {
+		if .Generate_Proc_FFI in args.property_flags {
+			io.write_string(writer, "foreign import ") or_return
+			io.write_string(writer, args.proc_ffi_name) or_return
+			io.write_string(writer, " \"") or_return
+			io.write_string(writer, args.proc_ffi_link_path) or_return
+			io.write_string(writer, "\"\n") or_return
+		}
+		if .Generate_Interface_FFI in args.property_flags {
+			io.write_string(writer, "foreign import ") or_return
+			io.write_string(writer, args.interface_ffi_name) or_return
+			io.write_string(writer, " \"") or_return
+			io.write_string(writer, args.interface_ffi_link_path) or_return
+			io.write_string(writer, "\"\n") or_return
+		}
+		io.write_rune(writer, '\n') or_return
+	}
+
 	if len(protocol.name) == 0 {
 		return Output_Validation_Error.Protocol_No_Name
 	}
@@ -76,6 +94,7 @@ output_write_interface :: proc(
 		writer: io.Writer,
 		_proc: $T,
 		interface_name: string,
+		args: Args,
 		scratch_allocator := context.temp_allocator,
 	) -> (
 		error: Output_Error,
@@ -85,7 +104,7 @@ output_write_interface :: proc(
 		context.allocator = mem.panic_allocator()
 		context.temp_allocator = scratch_allocator
 
-		if _proc == nil {
+		if _proc == nil || .Disable_Proc_Generation in args.property_flags {
 			return nil
 		}
 
@@ -341,6 +360,7 @@ output_write_interface :: proc(
 		writer: io.Writer,
 		_proc: $T,
 		interface_name: string,
+		args: Args,
 		scratch_allocator := context.temp_allocator,
 	) -> (
 		error: Output_Error,
@@ -353,8 +373,14 @@ output_write_interface :: proc(
 		context.allocator = mem.panic_allocator()
 		context.temp_allocator = scratch_allocator
 
-		if _proc == nil {
+		if _proc == nil || .Disable_Proc_Generation in args.property_flags {
 			return nil
+		}
+		
+		if .Generate_Proc_FFI in args.property_flags {
+			io.write_string(writer, "foreign ") or_return
+			io.write_string(writer, args.proc_ffi_name) or_return
+			io.write_string(writer, " {\n") or_return
 		}
 
 		for ; _proc != nil; _proc = _proc.next {
@@ -473,10 +499,12 @@ output_write_interface :: proc(
 
 				proc_index_name_string = strings.to_string(interface_constant_string_builder)
 
-				io.write_string(writer, proc_index_name_string) or_return
-				io.write_string(writer, " :: ") or_return
-				io.write_int(writer, proc_index) or_return
-				io.write_rune(writer, '\n') or_return
+				if .Generate_Proc_FFI not_in args.property_flags {
+					io.write_string(writer, proc_index_name_string) or_return
+					io.write_string(writer, " :: ") or_return
+					io.write_int(writer, proc_index) or_return
+					io.write_rune(writer, '\n') or_return
+				}
 
 				proc_index += 1
 			}
@@ -620,6 +648,10 @@ output_write_interface :: proc(
 					}
 				}
 			}
+			if .Generate_Proc_FFI in args.property_flags {
+				io.write_string(writer, " ---\n") or_return
+				continue
+			}
 			io.write_string(writer, " {\n\t") or_return
 			when T == ^XML_Parser_Request {
 				if ret_arg != nil {
@@ -722,10 +754,19 @@ output_write_interface :: proc(
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, ": ^") or_return
 				io.write_string(writer, interface_name) or_return
-				io.write_string(writer, ") {\n\tproxy_destroy(cast(^proxy)") or_return
-				io.write_string(writer, interface_name) or_return
-				io.write_string(writer, ")\n}\n") or_return
+				if .Generate_Proc_FFI in args.property_flags {
+					io.write_string(writer, ") ---\n") or_return
+				}
+				else {
+					io.write_string(writer, ") {\n\tproxy_destroy(cast(^proxy)") or_return
+					io.write_string(writer, interface_name) or_return
+					io.write_string(writer, ")\n}\n") or_return
+				}
 			}
+		}
+
+		if .Generate_Proc_FFI in args.property_flags {
+			io.write_string(writer, "}\n") or_return
 		}
 
 		io.write_rune(writer, '\n') or_return
@@ -767,11 +808,11 @@ output_write_interface :: proc(
 	io.write_string(writer, interface_name) or_return
 	io.write_string(writer, "\n\n") or_return
 
-	{
+	if .Disable_Interface_Generation not_in args.property_flags {
 		method_count: int
 		event_count: int
 
-		if interface.request != nil {
+		if interface.request != nil && .Generate_Interface_FFI not_in args.property_flags {
 			io.write_string(writer, fmt.aprintf("%s_requests := [?]message {{\n", interface.name, allocator = scratch_allocator)) or_return
 			for request := interface.request; request != nil; request = request.next {
 				method_count += 1
@@ -846,7 +887,7 @@ output_write_interface :: proc(
 			io.write_string(writer, "}\n") or_return
 		}
 
-		if interface.event != nil {
+		if interface.event != nil && .Generate_Interface_FFI not_in args.property_flags {
 			io.write_string(writer, fmt.aprintf("%s_events := [?]message {{\n", interface.name, allocator = scratch_allocator)) or_return
 			for event := interface.event; event != nil; event = event.next {
 				event_count += 1
@@ -921,184 +962,221 @@ output_write_interface :: proc(
 			io.write_string(writer, "}\n") or_return
 		}
 
-		io.write_string(writer, fmt.aprintf("%s_interface := interface {{\n\tname = \"%s\",\n\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
-		io.write_string(writer, "\tmethod_count = ") or_return
-		io.write_int(writer, method_count) or_return
-		io.write_string(writer, ",\n\tmethods = ") or_return
-		if method_count <= 0 {
-			io.write_string(writer, "nil,\n") or_return
+		if .Generate_Interface_FFI in args.property_flags {
+			io.write_string(writer, "foreign ") or_return
+			io.write_string(writer, args.proc_ffi_name) or_return
+			io.write_string(writer, " {\n") or_return
+			io.write_string(writer, interface_name) or_return
+			io.write_string(writer, "_interface: ^interface\n") or_return
+			io.write_string(writer, "}\n\n") or_return
 		}
 		else {
-			io.write_string(writer, fmt.aprintf("raw_data(&%s_requests),\n", interface.name, allocator = scratch_allocator)) or_return
-		}
-		io.write_string(writer, "\tevent_count = ") or_return
-		io.write_int(writer, event_count) or_return
-		io.write_string(writer, ",\n\tevents = ") or_return
-		if event_count <= 0 {
-			io.write_string(writer, "nil,\n") or_return
-		}
-		else {
-			io.write_string(writer, fmt.aprintf("raw_data(&%s_events),\n", interface.name, allocator = scratch_allocator)) or_return
-		}
+			io.write_string(writer, fmt.aprintf("%s_interface := interface {{\n\tname = \"%s\",\n\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
+			io.write_string(writer, "\tmethod_count = ") or_return
+			io.write_int(writer, method_count) or_return
+			io.write_string(writer, ",\n\tmethods = ") or_return
+			if method_count <= 0 {
+				io.write_string(writer, "nil,\n") or_return
+			}
+			else {
+				io.write_string(writer, fmt.aprintf("raw_data(&%s_requests),\n", interface.name, allocator = scratch_allocator)) or_return
+			}
+			io.write_string(writer, "\tevent_count = ") or_return
+			io.write_int(writer, event_count) or_return
+			io.write_string(writer, ",\n\tevents = ") or_return
+			if event_count <= 0 {
+				io.write_string(writer, "nil,\n") or_return
+			}
+			else {
+				io.write_string(writer, fmt.aprintf("raw_data(&%s_events),\n", interface.name, allocator = scratch_allocator)) or_return
+			}
 
-		io.write_string(writer, "}\n\n") or_return
+			io.write_string(writer, "}\n\n") or_return
+		}
 	}
 
-	if .Is_Server not_in args.property_flags {
-		io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc \"c\" (%s: ^%s, user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-		io.write_string(writer, fmt.aprintf("\tproxy_set_user_data(cast(^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+	if .Is_Server not_in args.property_flags && .Disable_Proc_Generation not_in args.property_flags{
+		if .Generate_Proc_FFI in args.property_flags {
+			io.write_string(writer, "foreign ") or_return
+			io.write_string(writer, args.proc_ffi_name) or_return
+			io.write_string(writer, " {\n") or_return
+		}
 
-		io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc \"c\" (%s: ^%s) -> (user_data: rawptr) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-		io.write_string(writer, fmt.aprintf("\treturn proxy_get_user_data(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
-
-		io.write_string(writer, fmt.aprintf("%s_get_version :: proc \"c\" (%s: ^%s) -> (version: u32) {{\n", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
-		io.write_string(writer, fmt.aprintf("\treturn proxy_get_version(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
-	}
-
-	for _enum := interface._enum; _enum != nil; _enum = _enum.next {
-		enum_name: string
-
-		if _enum.name[:3] == "wl_" {
-			enum_name = _enum.name[3:]
+		io.write_string(writer, fmt.aprintf("%s_set_user_data :: proc \"c\" (%s: ^%s, user_data: rawptr)", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		if .Generate_Proc_FFI not_in args.property_flags {
+			io.write_string(writer, fmt.aprintf(" {{\n\tproxy_set_user_data(cast(^proxy)%s, user_data)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
 		}
 		else {
-			enum_name = _enum.name
+			io.write_string(writer, " ---\n") or_return
 		}
 
-		if _enum.description != nil {
-			io.write_string(writer, "/*\n") or_return
-			for line in strings.split_lines_iterator(&_enum.description.content) {
-				io.write_rune(writer, '\t') or_return
-				io.write_string(writer, strings.trim_left(line, " \t")) or_return
-				io.write_rune(writer, '\n') or_return
+		io.write_string(writer, fmt.aprintf("%s_get_user_data :: proc \"c\" (%s: ^%s) -> (user_data: rawptr)", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		if .Generate_Proc_FFI not_in args.property_flags {
+			io.write_string(writer, fmt.aprintf(" {{\n\treturn proxy_get_user_data(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		}
+		else {
+			io.write_string(writer, " ---\n") or_return
+		}
+
+		io.write_string(writer, fmt.aprintf("%s_get_version :: proc \"c\" (%s: ^%s) -> (version: u32)", interface_name, interface_name, interface_name, allocator = scratch_allocator)) or_return
+		if .Generate_Proc_FFI not_in args.property_flags {
+			io.write_string(writer, fmt.aprintf(" {{\n\treturn proxy_get_version(cast(^proxy)%s)\n}}\n\n", interface_name, allocator = scratch_allocator)) or_return
+		}
+		else {
+			io.write_string(writer, " ---\n") or_return
+		}
+
+		if .Generate_Proc_FFI in args.property_flags {
+			io.write_string(writer, "}\n\n") or_return
+		}
+	}
+
+	if .Disable_Proc_Generation not_in args.property_flags {
+		for _enum := interface._enum; _enum != nil; _enum = _enum.next {
+			enum_name: string
+
+			if _enum.name[:3] == "wl_" {
+				enum_name = _enum.name[3:]
 			}
-			io.write_string(writer, "*/\n") or_return
-		}
-		if since, since_exists := _enum.since.?; since_exists == true {
-			io.write_string(writer, "// Since Version: ") or_return
-			io.write_int(writer, since) or_return
-			io.write_rune(writer, '\n') or_return
-		}
-		if deprecated_since, deprecated_since_exists := _enum.deprecated_since.?; deprecated_since_exists == true {
-			io.write_string(writer, "// Deprecated Since Version: ") or_return
-			io.write_int(writer, deprecated_since) or_return
-			io.write_rune(writer, '\n') or_return
-		}
-		if _enum.bitfield == true {
-			io.write_string(writer, fmt.aprintf("%s_%s :: bit_set[%s_%s_flag; u32]\n", interface_name, enum_name, interface_name, enum_name, allocator = scratch_allocator)) or_return
-		}
-		io.write_string(writer, interface_name) or_return
-		io.write_rune(writer, '_') or_return
-		io.write_string(writer, enum_name) or_return
-		if _enum.bitfield == true {
-			io.write_string(writer, "_flag") or_return
-		}
-		io.write_string(writer, " :: enum u32 {\n") or_return
-		for entry := _enum.entry; entry != nil; entry = entry.next {
-			entry_name: string
-
-			if entry.description != nil {
-				io.write_string(writer, "\t/*\n") or_return
-				if len(entry.description.summary) != 0 {
-					io.write_string(writer, "\t\tSummary: ") or_return
-					io.write_string(writer, entry.description.summary) or_return
-					io.write_rune(writer, '\n') or_return
-					if len(entry.description.content) != 0 {
-						io.write_rune(writer, '\n')
-					}
-				}
-				for line in strings.split_lines_iterator(&entry.description.content) {
-					trimmed_line: string
-
-					trimmed_line = strings.trim_left(line, " \t")
-					io.write_string(writer, "\t\t") or_return
-					io.write_string(writer, trimmed_line) or_return
-					io.write_rune(writer, '\n') or_return
-				}
-				io.write_string(writer, "\t*/\n") or_return
-			}
-			else if len(entry.summary) != 0 {
-				io.write_string(writer, "\t/*\n") or_return
-				for line in strings.split_lines_iterator(&entry.summary) {
-					trimmed_line: string
-
-					trimmed_line = strings.trim_left(line, " \t")
-					io.write_string(writer, "\t\t Summary: ") or_return
-					io.write_string(writer, trimmed_line) or_return
-					io.write_rune(writer, '\n') or_return
-				}
-				io.write_string(writer, "\t*/\n") or_return
+			else {
+				enum_name = _enum.name
 			}
 
-			if since, since_exists := entry.since.?; since_exists == true {
-				io.write_rune(writer, '\t') or_return
+			if _enum.description != nil {
+				io.write_string(writer, "/*\n") or_return
+				for line in strings.split_lines_iterator(&_enum.description.content) {
+					io.write_rune(writer, '\t') or_return
+					io.write_string(writer, strings.trim_left(line, " \t")) or_return
+					io.write_rune(writer, '\n') or_return
+				}
+				io.write_string(writer, "*/\n") or_return
+			}
+			if since, since_exists := _enum.since.?; since_exists == true {
 				io.write_string(writer, "// Since Version: ") or_return
 				io.write_int(writer, since) or_return
 				io.write_rune(writer, '\n') or_return
 			}
-			if deprecated_since, deprecated_since_exists := entry.deprecated_since.?; deprecated_since_exists == true {
-				io.write_rune(writer, '\t') or_return
+			if deprecated_since, deprecated_since_exists := _enum.deprecated_since.?; deprecated_since_exists == true {
 				io.write_string(writer, "// Deprecated Since Version: ") or_return
 				io.write_int(writer, deprecated_since) or_return
 				io.write_rune(writer, '\n') or_return
 			}
-			entry_name, _ = strings.to_screaming_snake_case(entry.name, scratch_allocator)
-			io.write_rune(writer, '\t') or_return
-			switch entry_name[0] {
-			case '0'..='9':
-				io.write_rune(writer, '_') or_return
+			if _enum.bitfield == true {
+				io.write_string(writer, fmt.aprintf("%s_%s :: bit_set[%s_%s_flag; u32]\n", interface_name, enum_name, interface_name, enum_name, allocator = scratch_allocator)) or_return
 			}
-			io.write_string(writer, entry_name) or_return
-			io.write_string(writer, " = ") or_return
-			if _enum.bitfield == false {
-				io.write_int(writer, entry.value)
-			}
-			else {
-				io.write_int(writer, log2(entry.value))
-			}
-			io.write_string(writer, ",\n") or_return
-		}
-		io.write_string(writer, "}\n") or_return
-		if .Is_Server not_in args.property_flags {
-			io.write_rune(writer, '\n') or_return
-		}
-		else {
 			io.write_string(writer, interface_name) or_return
 			io.write_rune(writer, '_') or_return
-			io.write_string(writer, _enum.name) or_return
-			io.write_string(writer, "_is_valid :: proc \"c\" (value: ") or_return
-			io.write_string(writer, interface_name) or_return
-			io.write_rune(writer, '_') or_return
-			io.write_string(writer, _enum.name) or_return
-			io.write_string(writer, ", version: u32) -> (valid: bool) {\n\tswitch value {\n") or_return
+			io.write_string(writer, enum_name) or_return
+			if _enum.bitfield == true {
+				io.write_string(writer, "_flag") or_return
+			}
+			io.write_string(writer, " :: enum u32 {\n") or_return
 			for entry := _enum.entry; entry != nil; entry = entry.next {
-				io.write_string(writer, "\tcase .") or_return
-				io.write_string(writer, strings.to_screaming_snake_case(entry.name, scratch_allocator)) or_return
-				io.write_string(writer, ": return version >= ") or_return
-				if since, since_exists := entry.since.?; since_exists == true {
-					io.write_int(writer, since) or_return
+				entry_name: string
+
+				if entry.description != nil {
+					io.write_string(writer, "\t/*\n") or_return
+					if len(entry.description.summary) != 0 {
+						io.write_string(writer, "\t\tSummary: ") or_return
+						io.write_string(writer, entry.description.summary) or_return
+						io.write_rune(writer, '\n') or_return
+						if len(entry.description.content) != 0 {
+							io.write_rune(writer, '\n')
+						}
+					}
+					for line in strings.split_lines_iterator(&entry.description.content) {
+						trimmed_line: string
+
+						trimmed_line = strings.trim_left(line, " \t")
+						io.write_string(writer, "\t\t") or_return
+						io.write_string(writer, trimmed_line) or_return
+						io.write_rune(writer, '\n') or_return
+					}
+					io.write_string(writer, "\t*/\n") or_return
 				}
-				else {
-					io.write_rune(writer, '1') or_return
+				else if len(entry.summary) != 0 {
+					io.write_string(writer, "\t/*\n") or_return
+					for line in strings.split_lines_iterator(&entry.summary) {
+						trimmed_line: string
+
+						trimmed_line = strings.trim_left(line, " \t")
+						io.write_string(writer, "\t\t Summary: ") or_return
+						io.write_string(writer, trimmed_line) or_return
+						io.write_rune(writer, '\n') or_return
+					}
+					io.write_string(writer, "\t*/\n") or_return
+				}
+
+				if since, since_exists := entry.since.?; since_exists == true {
+					io.write_rune(writer, '\t') or_return
+					io.write_string(writer, "// Since Version: ") or_return
+					io.write_int(writer, since) or_return
+					io.write_rune(writer, '\n') or_return
 				}
 				if deprecated_since, deprecated_since_exists := entry.deprecated_since.?; deprecated_since_exists == true {
-					io.write_string(writer, " && version < ") or_return
+					io.write_rune(writer, '\t') or_return
+					io.write_string(writer, "// Deprecated Since Version: ") or_return
 					io.write_int(writer, deprecated_since) or_return
+					io.write_rune(writer, '\n') or_return
 				}
+				entry_name, _ = strings.to_screaming_snake_case(entry.name, scratch_allocator)
+				io.write_rune(writer, '\t') or_return
+				switch entry_name[0] {
+				case '0'..='9':
+					io.write_rune(writer, '_') or_return
+				}
+				io.write_string(writer, entry_name) or_return
+				io.write_string(writer, " = ") or_return
+				if _enum.bitfield == false {
+					io.write_int(writer, entry.value)
+				}
+				else {
+					io.write_int(writer, log2(entry.value))
+				}
+				io.write_string(writer, ",\n") or_return
+			}
+			io.write_string(writer, "}\n") or_return
+			if .Is_Server not_in args.property_flags {
 				io.write_rune(writer, '\n') or_return
 			}
-			io.write_string(writer, "\tcase:\n\t\treturn false\n") or_return
-			io.write_string(writer, "\t}\n}\n\n") or_return
+			else {
+				io.write_string(writer, interface_name) or_return
+				io.write_rune(writer, '_') or_return
+				io.write_string(writer, _enum.name) or_return
+				io.write_string(writer, "_is_valid :: proc \"c\" (value: ") or_return
+				io.write_string(writer, interface_name) or_return
+				io.write_rune(writer, '_') or_return
+				io.write_string(writer, _enum.name) or_return
+				io.write_string(writer, ", version: u32) -> (valid: bool) {\n\tswitch value {\n") or_return
+				for entry := _enum.entry; entry != nil; entry = entry.next {
+					io.write_string(writer, "\tcase .") or_return
+					io.write_string(writer, strings.to_screaming_snake_case(entry.name, scratch_allocator)) or_return
+					io.write_string(writer, ": return version >= ") or_return
+					if since, since_exists := entry.since.?; since_exists == true {
+						io.write_int(writer, since) or_return
+					}
+					else {
+						io.write_rune(writer, '1') or_return
+					}
+					if deprecated_since, deprecated_since_exists := entry.deprecated_since.?; deprecated_since_exists == true {
+						io.write_string(writer, " && version < ") or_return
+						io.write_int(writer, deprecated_since) or_return
+					}
+					io.write_rune(writer, '\n') or_return
+				}
+				io.write_string(writer, "\tcase:\n\t\treturn false\n") or_return
+				io.write_string(writer, "\t}\n}\n\n") or_return
+			}
 		}
 	}
 
 	if .Is_Server in args.property_flags {
-		write_proc_listeners(writer, interface.request, interface_name, scratch_allocator) or_return
-		write_proc_interfaces(writer, interface.event, interface_name, scratch_allocator) or_return
+		write_proc_listeners(writer, interface.request, interface_name, args, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.event, interface_name, args, scratch_allocator) or_return
 	}
 	else {
-		write_proc_listeners(writer, interface.event, interface_name, scratch_allocator) or_return
-		write_proc_interfaces(writer, interface.request, interface_name, scratch_allocator) or_return
+		write_proc_listeners(writer, interface.event, interface_name, args, scratch_allocator) or_return
+		write_proc_interfaces(writer, interface.request, interface_name, args, scratch_allocator) or_return
 	}
 
 	return nil

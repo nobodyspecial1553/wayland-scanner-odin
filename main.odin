@@ -6,6 +6,7 @@ package ns_wayland_scanner_odin
 import os "core:os/os2"
 import "core:io"
 import "core:bufio"
+import "core:strings"
 
 main :: proc() {
 	context.logger = log.create_console_logger(.Debug when ODIN_DEBUG else .Info)
@@ -136,6 +137,10 @@ main :: proc() {
 
 Args_Property :: enum {
 	Is_Server = 0,
+	Generate_Proc_FFI,
+	Disable_Proc_Generation,
+	Generate_Interface_FFI,
+	Disable_Interface_Generation,
 }
 Args_Property_Flags :: bit_set[Args_Property]
 
@@ -143,6 +148,10 @@ Args :: struct {
 	file_path_in_array: []string,
 	file_path_out: string,
 	property_flags: Args_Property_Flags,
+	proc_ffi_link_path: string,
+	proc_ffi_name: string,
+	interface_ffi_link_path: string,
+	interface_ffi_name: string,
 }
 
 @(require_results)
@@ -189,14 +198,52 @@ parse_args :: proc(
 			args.property_flags -= { .Is_Server }
 		case "-server":
 			args.property_flags += { .Is_Server }
+		case "-disable-proc-generation":
+			args.property_flags += { .Disable_Proc_Generation }
+		case "-disable-interface-generation":
+			args.property_flags += { .Disable_Interface_Generation }
 		case "-h":
 			print_help()
 		case:
-			if arg[0] == '-' {
+			switch {
+			case strings.contains(arg, "-generate-proc-ffi") == true:
+				colon_index: int
+				equal_sign_index: int
+
+				equal_sign_index = strings.index_byte(arg, '=')
+				if equal_sign_index < 0 || equal_sign_index + 1 >= len(arg) {
+					break
+				}
+				colon_index = strings.index_byte(arg, ':')
+				if colon_index < 0 || colon_index + 1 >= len(arg) || colon_index > equal_sign_index {
+					break
+				}
+
+				args.proc_ffi_name = arg[colon_index + 1:equal_sign_index]
+				args.proc_ffi_link_path = arg[equal_sign_index + 1:]
+				args.property_flags += { .Generate_Proc_FFI }
+			case strings.contains(arg, "-generate-interface-ffi") == true:
+				colon_index: int
+				equal_sign_index: int
+
+				equal_sign_index = strings.index_byte(arg, '=')
+				if equal_sign_index < 0 || equal_sign_index + 1 >= len(arg) {
+					break
+				}
+				colon_index = strings.index_byte(arg, ':')
+				if colon_index < 0 || colon_index + 1 >= len(arg) || colon_index > equal_sign_index {
+					break
+				}
+
+				args.interface_ffi_name = arg[colon_index + 1:equal_sign_index]
+				args.interface_ffi_link_path = arg[equal_sign_index + 1:]
+				args.property_flags += { .Generate_Interface_FFI }
+			case arg[0] == '-':
 				fmt.eprintfln("'%s' is not a valid flag!", arg)
 				os.exit(1)
+			case:
+				append(&file_path_in_array, arg)
 			}
-			append(&file_path_in_array, arg)
 		}
 	}
 
@@ -219,6 +266,10 @@ print_help :: proc() -> ! {
 	-o <output_file_path>: Sets the output path
 	-client (default): Generates wayland client odin file
 	-server: Generates wayland server odin file
+	-generate-proc-ffi:<foreign import name>=<odin-style link path>: Generates FFI for proxy procs instead of procs with bodies
+	-disable-proc-generation: Disables proc, listener and enum generation
+	-generate-interface-ffi:<foreign import name>=<odin-style link path>: Generates FFI for interface structures
+	-disable-interface-generation: Disables generation for interface structures
 	-h: Prints help message and exits`, os.args[0], os.args[0])
 
 	os.exit(0)
