@@ -378,6 +378,11 @@ output_write_interface :: proc(
 		}
 		
 		if .Generate_Proc_FFI in args.property_flags {
+			if len(args.proc_ffi_link_prefix) != 0 {
+				io.write_string(writer, "@(link_prefix=\"") or_return
+				io.write_string(writer, args.proc_ffi_link_prefix) or_return
+				io.write_string(writer, "\")\n") or_return
+			}
 			io.write_string(writer, "foreign ") or_return
 			io.write_string(writer, args.proc_ffi_name) or_return
 			io.write_string(writer, " {\n") or_return
@@ -749,6 +754,11 @@ output_write_interface :: proc(
 
 		when T == ^XML_Parser_Request {
 			if has_destroy_request == false {
+				if .Generate_Proc_FFI in args.property_flags && len(args.proc_ffi_link_prefix) != 0 {
+					io.write_string(writer, "@(link_prefix=\"") or_return
+					io.write_string(writer, args.proc_ffi_link_prefix) or_return
+					io.write_string(writer, "\")\n") or_return
+				}
 				io.write_string(writer, interface_name) or_return
 				io.write_string(writer, "_request_destroy :: proc \"c\" (") or_return
 				io.write_string(writer, interface_name) or_return
@@ -963,11 +973,16 @@ output_write_interface :: proc(
 		}
 
 		if .Generate_Interface_FFI in args.property_flags {
+			if len(args.proc_ffi_link_prefix) != 0 {
+				io.write_string(writer, "@(link_prefix=\"") or_return
+				io.write_string(writer, args.proc_ffi_link_prefix) or_return
+				io.write_string(writer, "\")\n") or_return
+			}
 			io.write_string(writer, "foreign ") or_return
-			io.write_string(writer, args.proc_ffi_name) or_return
+			io.write_string(writer, args.interface_ffi_name) or_return
 			io.write_string(writer, " {\n") or_return
 			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, "_interface: ^interface\n") or_return
+			io.write_string(writer, "_interface: interface\n") or_return
 			io.write_string(writer, "}\n\n") or_return
 		}
 		else {
@@ -997,6 +1012,11 @@ output_write_interface :: proc(
 
 	if .Is_Server not_in args.property_flags && .Disable_Proc_Generation not_in args.property_flags{
 		if .Generate_Proc_FFI in args.property_flags {
+			if len(args.proc_ffi_link_prefix) != 0 {
+				io.write_string(writer, "@(link_prefix=\"") or_return
+				io.write_string(writer, args.proc_ffi_link_prefix) or_return
+				io.write_string(writer, "\")\n") or_return
+			}
 			io.write_string(writer, "foreign ") or_return
 			io.write_string(writer, args.proc_ffi_name) or_return
 			io.write_string(writer, " {\n") or_return

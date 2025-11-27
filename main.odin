@@ -149,8 +149,10 @@ Args :: struct {
 	file_path_out: string,
 	property_flags: Args_Property_Flags,
 	proc_ffi_link_path: string,
+	proc_ffi_link_prefix: string,
 	proc_ffi_name: string,
 	interface_ffi_link_path: string,
+	interface_ffi_link_prefix: string,
 	interface_ffi_name: string,
 }
 
@@ -206,6 +208,15 @@ parse_args :: proc(
 			print_help()
 		case:
 			switch {
+			case strings.contains(arg, "-generate-proc-ffi-link-prefix") == true:
+				equal_sign_index: int
+
+				equal_sign_index = strings.index_byte(arg, '=')
+				if equal_sign_index < 0 || equal_sign_index + 1 >= len(arg) {
+					break
+				}
+
+				args.proc_ffi_link_prefix = arg[equal_sign_index + 1:]
 			case strings.contains(arg, "-generate-proc-ffi") == true:
 				colon_index: int
 				equal_sign_index: int
@@ -222,6 +233,15 @@ parse_args :: proc(
 				args.proc_ffi_name = arg[colon_index + 1:equal_sign_index]
 				args.proc_ffi_link_path = arg[equal_sign_index + 1:]
 				args.property_flags += { .Generate_Proc_FFI }
+			case strings.contains(arg, "-generate-interface-ffi-link-prefix") == true:
+				equal_sign_index: int
+
+				equal_sign_index = strings.index_byte(arg, '=')
+				if equal_sign_index < 0 || equal_sign_index + 1 >= len(arg) {
+					break
+				}
+
+				args.interface_ffi_link_prefix = arg[equal_sign_index + 1:]
 			case strings.contains(arg, "-generate-interface-ffi") == true:
 				colon_index: int
 				equal_sign_index: int
@@ -267,8 +287,10 @@ print_help :: proc() -> ! {
 	-client (default): Generates wayland client odin file
 	-server: Generates wayland server odin file
 	-generate-proc-ffi:<foreign import name>=<odin-style link path>: Generates FFI for proxy procs instead of procs with bodies
+	-generate-proc-ffi-link-prefix=<link prefix>
 	-disable-proc-generation: Disables proc, listener and enum generation
 	-generate-interface-ffi:<foreign import name>=<odin-style link path>: Generates FFI for interface structures
+	-generate-interface-ffi-link-prefix=<link prefix>
 	-disable-interface-generation: Disables generation for interface structures
 	-h: Prints help message and exits`, os.args[0], os.args[0])
 
