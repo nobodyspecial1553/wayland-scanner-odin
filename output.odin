@@ -737,7 +737,9 @@ output_write_interface :: proc(
 							io.write_string(writer, "interface.name, version, nil") or_return
 							break
 						}
-						fallthrough
+						else {
+							io.write_string(writer, "nil") or_return
+						}
 					}
 					else when T == ^XML_Parser_Event {
 						fallthrough
