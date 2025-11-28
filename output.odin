@@ -697,7 +697,7 @@ output_write_interface :: proc(
 						else {
 							ret_arg_interface_name = ret_arg.interface
 						}
-						io.write_string(writer, "cast(^interface)&") or_return
+						io.write_rune(writer, '&') or_return
 						io.write_string(writer, ret_arg_interface_name) or_return
 						io.write_string(writer, "_interface, ") or_return
 						io.write_string(writer, "proxy_get_version(cast(^proxy)") or_return
