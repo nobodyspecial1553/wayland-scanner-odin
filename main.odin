@@ -52,6 +52,7 @@ main :: proc() {
 		buffered_reader: bufio.Reader
 
 		output_file: ^os.File
+		output_file_stream: io.Stream
 		output_file_open_error: os.Error
 		buffered_output_writer: bufio.Writer
 		buffered_output_stream: io.Writer
@@ -79,8 +80,9 @@ main :: proc() {
 			os.exit(1)
 		}
 		defer os.close(output_file)
+		output_file_stream = os.to_stream(output_file)
 
-		bufio.writer_init(&buffered_output_writer, output_file.stream, mem.Megabyte)
+		bufio.writer_init(&buffered_output_writer, output_file_stream, mem.Megabyte)
 		defer {
 			bufio.writer_flush(&buffered_output_writer)
 			bufio.writer_destroy(&buffered_output_writer)
@@ -93,6 +95,7 @@ main :: proc() {
 		output_write_header(buffered_output_stream)
 		for file_path_in in args.file_path_in_array {
 			file: ^os.File
+			file_input_stream: io.Stream
 			file_open_error: os.Error
 
 			buffered_stream: io.Reader
@@ -108,8 +111,9 @@ main :: proc() {
 				os.exit(1)
 			}
 			defer os.close(file)
+			file_input_stream = os.to_stream(file)
 
-			bufio.reader_reset(&buffered_reader, file.stream)
+			bufio.reader_reset(&buffered_reader, file_input_stream)
 			buffered_stream = bufio.reader_to_stream(&buffered_reader)
 
 			xml_lexer_init(&xml_lexer, buffered_stream, string_allocator, lexer_scratch_allocator)
