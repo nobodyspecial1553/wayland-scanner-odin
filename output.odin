@@ -975,9 +975,9 @@ output_write_interface :: proc(
 		}
 
 		if .Generate_Interface_FFI in args.property_flags {
-			if len(args.proc_ffi_link_prefix) != 0 {
+			if len(args.interface_ffi_link_prefix) != 0 {
 				io.write_string(writer, "@(link_prefix=\"") or_return
-				io.write_string(writer, args.proc_ffi_link_prefix) or_return
+				io.write_string(writer, args.interface_ffi_link_prefix) or_return
 				io.write_string(writer, "\")\n") or_return
 			}
 			io.write_string(writer, "foreign ") or_return
