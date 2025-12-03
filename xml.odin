@@ -23,6 +23,8 @@ XML_Token_Type :: enum {
 	Whitespace,
 	Angle_Bracket_Left,
 	Angle_Bracket_Right,
+	Square_Bracket_Left,
+	Square_Bracket_Right,
 	Forward_Slash,
 	Exclamation,
 	Question,
@@ -122,6 +124,16 @@ xml_lexer_token_next :: proc(lexer: ^XML_Lexer) -> (token: XML_Token, error: XML
 			return {
 				type = .Angle_Bracket_Right,
 				lexeme = ">",
+			}
+		case '[':
+			return {
+				type = .Square_Bracket_Left,
+				lexeme = "[",
+			}
+		case ']':
+			return {
+				type = .Square_Bracket_Right,
+				lexeme = "]",
 			}
 		case '/':
 			return {
@@ -278,6 +290,10 @@ XML_Parser_Entry :: struct {
 	since: Maybe(int),
 	deprecated_since: Maybe(int),
 	description: ^XML_Parser_Description,
+}
+
+XML_Parser_CDATA :: struct {
+	content: string,
 }
 
 XML_Parse_Error :: enum {
@@ -446,6 +462,7 @@ XML_Parser_Tag_Variant :: union #no_nil {
 	XML_Parser_Arg,
 	XML_Parser_Enum,
 	XML_Parser_Entry,
+	XML_Parser_CDATA,
 }
 
 XML_Parser_Tag :: struct {
@@ -467,6 +484,7 @@ xml_parser_tag_variant_to_string :: proc(xml_parser_tag_variant: XML_Parser_Tag_
 	case XML_Parser_Arg: return "arg"
 	case XML_Parser_Enum: return "enum"
 	case XML_Parser_Entry: return "entry"
+	case XML_Parser_CDATA: return "CDATA"
 	}
 	return ""
 }
@@ -553,206 +571,243 @@ xml_parse_tag :: proc(
 		content_string_builder = strings.builder_make_none(arena_allocator)
 		tag_ptr = cast([^]byte)&tag
 
-		attribute_parse_loop: for {
-			attribute: XML_Parser_Attribute
-			attribute_ok: bool
-			is_empty_element_tag: bool
+		when T == XML_Parser_CDATA {
+			{
+				token: XML_Token
 
-			struct_field: reflect.Struct_Field
-			struct_field_offset: uintptr
-			attribute_ptr: [^]byte
-
-			attribute, attribute_ok, is_empty_element_tag = xml_parse_attribute(lexer) or_return
-			if is_empty_element_tag == true {
-				return tag, nil
+				token = xml_parse_skip_ws(lexer) or_return
+				if token.type != .Square_Bracket_Left {
+					xml_parse_print_error_expected(token.location, "[", token.lexeme)
+					return tag, XML_Parse_Error.Unexpected_Token
+				}
 			}
-			if attribute_ok == false {
-				break
-			}
+		}
+		else {
+			attribute_parse_loop: for {
+				attribute: XML_Parser_Attribute
+				attribute_ok: bool
+				is_empty_element_tag: bool
 
-			//struct_field = reflect.struct_field_by_name(T, attribute.name)
-			struct_field, struct_field_offset, _ = get_struct_field(T, attribute.name, scratch_allocator)
-			if struct_field.type == nil {
-				header: string
+				struct_field: reflect.Struct_Field
+				struct_field_offset: uintptr
+				attribute_ptr: [^]byte
 
-				header = xml_parse_generate_print_header("Warning", attribute.name_location)
-				fmt.eprintfln("%s Ignoring unknown attribute: \"%s\"", header, attribute.name)
-			}
-
-			//attribute_ptr = tag_ptr[struct_field.offset:]
-			attribute_ptr = tag_ptr[struct_field_offset:]
-			#partial switch variant in reflect.type_info_base(struct_field.type).variant {
-			case reflect.Type_Info_String:
-				(cast(^string)attribute_ptr)^ = attribute.value
-			case reflect.Type_Info_Integer:
-				value: int
-				value_convert_success: bool
-
-				if struct_field.type.size != size_of(int) {
-					header: string
-
-					header = xml_parse_generate_print_header("Error", attribute.name_location)
-					fmt.eprintfln("%s Integer in structure was %v bytes, not %v!", header, struct_field.type.size, size_of(int))
-					return tag, XML_Parse_Error.Reflection_Incorrect_Integer_Size
+				attribute, attribute_ok, is_empty_element_tag = xml_parse_attribute(lexer) or_return
+				if is_empty_element_tag == true {
+					return tag, nil
+				}
+				if attribute_ok == false {
+					break
 				}
 
-				value, value_convert_success = strconv.parse_int(attribute.value)
-				if value_convert_success == false {
+				//struct_field = reflect.struct_field_by_name(T, attribute.name)
+				struct_field, struct_field_offset, _ = get_struct_field(T, attribute.name, scratch_allocator)
+				if struct_field.type == nil {
+					header: string
+
+					header = xml_parse_generate_print_header("Warning", attribute.name_location)
+					fmt.eprintfln("%s Ignoring unknown attribute: \"%s\"", header, attribute.name)
+				}
+
+				//attribute_ptr = tag_ptr[struct_field.offset:]
+				attribute_ptr = tag_ptr[struct_field_offset:]
+				#partial switch variant in reflect.type_info_base(struct_field.type).variant {
+				case reflect.Type_Info_String:
+					(cast(^string)attribute_ptr)^ = attribute.value
+				case reflect.Type_Info_Integer:
+					value: int
+					value_convert_success: bool
+
+					if struct_field.type.size != size_of(int) {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.name_location)
+						fmt.eprintfln("%s Integer in structure was %v bytes, not %v!", header, struct_field.type.size, size_of(int))
+						return tag, XML_Parse_Error.Reflection_Incorrect_Integer_Size
+					}
+
+					value, value_convert_success = strconv.parse_int(attribute.value)
+					if value_convert_success == false {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.value_location)
+						fmt.eprintfln("%s Failed to convert \"%s\" to an integer!", header, attribute.value)
+						return tag, XML_Parse_Error.Integer_Cast_Failure
+					}
+
+					(cast(^int)attribute_ptr)^ = value
+				case reflect.Type_Info_Boolean:
+					value: bool
+					value_convert_success: bool
+
+					if struct_field.type.size != size_of(bool) {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.name_location)
+						fmt.eprintfln("%s Integer in structure was %v bytes, not %v!", header, struct_field.type.size, size_of(int))
+						return tag, XML_Parse_Error.Reflection_Incorrect_Boolean_Size
+					}
+
+					value, value_convert_success = strconv.parse_bool(attribute.value)
+					if value_convert_success == false {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.value_location)
+						fmt.eprintfln("%s Failed to convert \"%s\" to an boolean!", header, attribute.value)
+						return tag, XML_Parse_Error.Boolean_Cast_Failure
+					}
+
+					(cast(^bool)attribute_ptr)^ = value
+				case reflect.Type_Info_Union:
+					value:int
+					value_convert_success: bool
+
+					if len(variant.variants) > 1 {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.name_location)
+						fmt.eprintfln("%s Cannot assign \"%s\" as structure is not a maybe-like!", header, attribute.name)
+						return tag, XML_Parse_Error.Reflection_Union_Is_Not_Maybe_Like
+					}
+
+					if variant.variants[0].size != size_of(int) {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.name_location)
+						fmt.eprintfln("%s Integer in union was %v bytes, not %v!", header, variant.variants[0].size, size_of(int))
+						return tag, XML_Parse_Error.Reflection_Incorrect_Integer_Size
+					}
+					
+					value, value_convert_success = strconv.parse_int(attribute.value)
+					if value_convert_success == false {
+						header: string
+
+						header = xml_parse_generate_print_header("Error", attribute.value_location)
+						fmt.eprintfln("%s Failed to convert \"%s\" to an integer!", header, attribute.value)
+						return tag, XML_Parse_Error.Integer_Cast_Failure
+					}
+
+					(cast(^Maybe(int))attribute_ptr)^ = value
+				case:
 					header: string
 
 					header = xml_parse_generate_print_header("Error", attribute.value_location)
-					fmt.eprintfln("%s Failed to convert \"%s\" to an integer!", header, attribute.value)
-					return tag, XML_Parse_Error.Integer_Cast_Failure
+					fmt.eprintfln("%s Unhandled base type encountered!", header)
+					return tag, XML_Parse_Error.Reflection_Unhandled_Base_Type
 				}
-
-				(cast(^int)attribute_ptr)^ = value
-			case reflect.Type_Info_Boolean:
-				value: bool
-				value_convert_success: bool
-
-				if struct_field.type.size != size_of(bool) {
-					header: string
-
-					header = xml_parse_generate_print_header("Error", attribute.name_location)
-					fmt.eprintfln("%s Integer in structure was %v bytes, not %v!", header, struct_field.type.size, size_of(int))
-					return tag, XML_Parse_Error.Reflection_Incorrect_Boolean_Size
-				}
-
-				value, value_convert_success = strconv.parse_bool(attribute.value)
-				if value_convert_success == false {
-					header: string
-
-					header = xml_parse_generate_print_header("Error", attribute.value_location)
-					fmt.eprintfln("%s Failed to convert \"%s\" to an boolean!", header, attribute.value)
-					return tag, XML_Parse_Error.Boolean_Cast_Failure
-				}
-
-				(cast(^bool)attribute_ptr)^ = value
-			case reflect.Type_Info_Union:
-				value:int
-				value_convert_success: bool
-
-				if len(variant.variants) > 1 {
-					header: string
-
-					header = xml_parse_generate_print_header("Error", attribute.name_location)
-					fmt.eprintfln("%s Cannot assign \"%s\" as structure is not a maybe-like!", header, attribute.name)
-					return tag, XML_Parse_Error.Reflection_Union_Is_Not_Maybe_Like
-				}
-
-				if variant.variants[0].size != size_of(int) {
-					header: string
-
-					header = xml_parse_generate_print_header("Error", attribute.name_location)
-					fmt.eprintfln("%s Integer in union was %v bytes, not %v!", header, variant.variants[0].size, size_of(int))
-					return tag, XML_Parse_Error.Reflection_Incorrect_Integer_Size
-				}
-				
-				value, value_convert_success = strconv.parse_int(attribute.value)
-				if value_convert_success == false {
-					header: string
-
-					header = xml_parse_generate_print_header("Error", attribute.value_location)
-					fmt.eprintfln("%s Failed to convert \"%s\" to an integer!", header, attribute.value)
-					return tag, XML_Parse_Error.Integer_Cast_Failure
-				}
-
-				(cast(^Maybe(int))attribute_ptr)^ = value
-			case:
-				header: string
-
-				header = xml_parse_generate_print_header("Error", attribute.value_location)
-				fmt.eprintfln("%s Unhandled base type encountered!", header)
-				return tag, XML_Parse_Error.Reflection_Unhandled_Base_Type
 			}
 		}
 
-		content_parse_loop: for {
-			child_tag: XML_Parser_Tag
-			child_tag_is_closing_tag: bool
-			child_tag_name: string
-			child_tag_variant: any
-			child_tag_variant_type_info: ^reflect.Type_Info
-
-			struct_field: reflect.Struct_Field
-			struct_field_offset: uintptr
-			content_ptr: [^]byte
-
+		when T == XML_Parser_CDATA {
 			token: XML_Token
 
-			token = xml_parse_skip_ws(lexer) or_return
+			token = xml_lexer_token_next(lexer) or_return
 			for {
-				if token.type == .Angle_Bracket_Left {
+				if token.type == .Square_Bracket_Right {
+					token = xml_parse_skip_ws(lexer) or_return
+					if token.type != .Square_Bracket_Right {
+						xml_parse_print_error_expected(token.location, "]", token.lexeme)
+						return tag, XML_Parse_Error.Unexpected_Token
+					}
 					break
 				}
 				strings.write_string(&content_string_builder, token.lexeme)
 				token = xml_lexer_token_next(lexer) or_return
 			}
+		}
+		else {
+			content_parse_loop: for {
+				child_tag: XML_Parser_Tag
+				child_tag_is_closing_tag: bool
+				child_tag_name: string
+				child_tag_variant: any
+				child_tag_variant_type_info: ^reflect.Type_Info
 
-			child_tag, child_tag_is_closing_tag = xml_parse_tag(lexer) or_return
-			child_tag_name = xml_parser_tag_variant_to_string(child_tag.variant)
+				struct_field: reflect.Struct_Field
+				struct_field_offset: uintptr
+				content_ptr: [^]byte
 
-			if child_tag_is_closing_tag == true {
-				if _, closing_tag_is_parent_type := child_tag.variant.(T); closing_tag_is_parent_type == false {
-					header: string
-					expected_name: string
+				token: XML_Token
 
-					expected_name = xml_parser_tag_variant_to_string(T{})
-
-					header = xml_parse_generate_print_header("Error", child_tag.location)
-					fmt.eprintfln("%s Closing tag was not expected type \"%s\", received \"%s\"", header, expected_name, child_tag_name)
-
-					return tag, XML_Parse_Error.Unexpected_Closing_Tag
-				}
-				break
-			}
-
-			struct_field, struct_field_offset, _ = get_struct_field(T, child_tag_name)
-			if struct_field.type == nil {
-				header: string
-				tag_name: string
-
-				tag_name = xml_parser_tag_variant_to_string(T{})
-
-				header = xml_parse_generate_print_header("Warning", child_tag.location)
-				fmt.eprintfln("%s \"%s\" is not a valid tag inside a \"%s\" tag!", header, child_tag_name, tag_name)
-			}
-			content_ptr = tag_ptr[struct_field_offset:]
-
-			descend_through_next_list: {
-				type_info_ptr: reflect.Type_Info_Pointer
-				type_info_elem: ^reflect.Type_Info
-				type_info_is_pointer: bool
-				next_struct_field: reflect.Struct_Field
-
-				if (cast(^rawptr)content_ptr)^ == nil {
-					break descend_through_next_list
-				}
-
-				type_info_ptr, type_info_is_pointer = struct_field.type.variant.(reflect.Type_Info_Pointer)
-				if type_info_is_pointer == false {
-					break descend_through_next_list
-				}
-				type_info_elem = type_info_ptr.elem
-
-				next_struct_field = reflect.struct_field_by_name(type_info_elem.id, "next")
-				if next_struct_field.type == nil {
-					break descend_through_next_list
-				}
-
+				token = xml_parse_skip_ws(lexer) or_return
 				for {
-					content_ptr = cast([^]byte)(cast(^rawptr)content_ptr)^
-					if (cast(^rawptr)content_ptr)^ == nil {
+					if token.type == .Angle_Bracket_Left {
 						break
 					}
-					content_ptr = content_ptr[next_struct_field.offset:]
+					strings.write_string(&content_string_builder, token.lexeme)
+					token = xml_lexer_token_next(lexer) or_return
 				}
-			}
 
-			child_tag_variant = reflect.get_union_variant(child_tag.variant)
-			child_tag_variant_type_info = type_info_of(child_tag_variant.id)
-			(cast(^rawptr)content_ptr)^, _ = mem.alloc(child_tag_variant_type_info.size, child_tag_variant_type_info.align, arena_allocator)
-			mem.copy((cast(^rawptr)content_ptr)^, child_tag_variant.data, child_tag_variant_type_info.size)
+				child_tag, child_tag_is_closing_tag = xml_parse_tag(lexer) or_return
+				child_tag_name = xml_parser_tag_variant_to_string(child_tag.variant)
+
+				if cdata_tag, cdata_tag_selected := child_tag.variant.(XML_Parser_CDATA); cdata_tag_selected == true {
+					strings.write_string(&content_string_builder, cdata_tag.content)
+					continue
+				}
+
+				if child_tag_is_closing_tag == true {
+					if _, closing_tag_is_parent_type := child_tag.variant.(T); closing_tag_is_parent_type == false {
+						header: string
+						expected_name: string
+
+						expected_name = xml_parser_tag_variant_to_string(T{})
+
+						header = xml_parse_generate_print_header("Error", child_tag.location)
+						fmt.eprintfln("%s Closing tag was not expected type \"%s\", received \"%s\"", header, expected_name, child_tag_name)
+
+						return tag, XML_Parse_Error.Unexpected_Closing_Tag
+					}
+					break
+				}
+
+				struct_field, struct_field_offset, _ = get_struct_field(T, child_tag_name)
+				if struct_field.type == nil {
+					header: string
+					tag_name: string
+
+					tag_name = xml_parser_tag_variant_to_string(T{})
+
+					header = xml_parse_generate_print_header("Warning", child_tag.location)
+					fmt.eprintfln("%s \"%s\" is not a valid tag inside a \"%s\" tag!", header, child_tag_name, tag_name)
+				}
+				content_ptr = tag_ptr[struct_field_offset:]
+
+				descend_through_next_list: {
+					type_info_ptr: reflect.Type_Info_Pointer
+					type_info_elem: ^reflect.Type_Info
+					type_info_is_pointer: bool
+					next_struct_field: reflect.Struct_Field
+
+					if (cast(^rawptr)content_ptr)^ == nil {
+						break descend_through_next_list
+					}
+
+					type_info_ptr, type_info_is_pointer = struct_field.type.variant.(reflect.Type_Info_Pointer)
+					if type_info_is_pointer == false {
+						break descend_through_next_list
+					}
+					type_info_elem = type_info_ptr.elem
+
+					next_struct_field = reflect.struct_field_by_name(type_info_elem.id, "next")
+					if next_struct_field.type == nil {
+						break descend_through_next_list
+					}
+
+					for {
+						content_ptr = cast([^]byte)(cast(^rawptr)content_ptr)^
+						if (cast(^rawptr)content_ptr)^ == nil {
+							break
+						}
+						content_ptr = content_ptr[next_struct_field.offset:]
+					}
+				}
+
+				child_tag_variant = reflect.get_union_variant(child_tag.variant)
+				child_tag_variant_type_info = type_info_of(child_tag_variant.id)
+				(cast(^rawptr)content_ptr)^, _ = mem.alloc(child_tag_variant_type_info.size, child_tag_variant_type_info.align, arena_allocator)
+				mem.copy((cast(^rawptr)content_ptr)^, child_tag_variant.data, child_tag_variant_type_info.size)
+			}
 		}
 
 		set_content_string: {
@@ -824,28 +879,33 @@ xml_parse_tag :: proc(
 			return tag, true, nil
 		case .Exclamation:
 			token = xml_lexer_token_next(lexer) or_return
-			if token.type != .Hyphen {
-				xml_parse_print_error_expected(token.location, "-", token.lexeme)
-				return tag, false, XML_Parse_Error.Unexpected_Token
-			}
-			token = xml_lexer_token_next(lexer) or_return
-			if token.type != .Hyphen {
-				xml_parse_print_error_expected(token.location, "-", token.lexeme)
-				return tag, false, XML_Parse_Error.Unexpected_Token
-			}
-			for {
-				token = xml_parse_skip_ws(lexer) or_return
-				if token.type != .Hyphen {
-					continue
-				}
+			#partial switch token.type {
+			case .Hyphen:
 				token = xml_lexer_token_next(lexer) or_return
 				if token.type != .Hyphen {
-					continue
+					xml_parse_print_error_expected(token.location, "-", token.lexeme)
+					return tag, false, XML_Parse_Error.Unexpected_Token
 				}
+				for {
+					token = xml_parse_skip_ws(lexer) or_return
+					if token.type != .Hyphen {
+						continue
+					}
+					token = xml_lexer_token_next(lexer) or_return
+					if token.type != .Hyphen {
+						continue
+					}
+					token = xml_lexer_token_next(lexer) or_return
+					if token.type == .Angle_Bracket_Right {
+						break
+					}
+				}
+			case .Square_Bracket_Left:
 				token = xml_lexer_token_next(lexer) or_return
-				if token.type == .Angle_Bracket_Right {
-					break
-				}
+				break non_opening_tag_parse_loop
+			case:
+				xml_parse_print_error_expected(token.location, "- (or) [", token.lexeme)
+				return tag, false, XML_Parse_Error.Unexpected_Token
 			}
 		case .Identifier:
 			break non_opening_tag_parse_loop
@@ -865,6 +925,7 @@ xml_parse_tag :: proc(
 	case "arg": tag.variant = parse_tag(lexer, XML_Parser_Arg) or_return
 	case "enum": tag.variant = parse_tag(lexer, XML_Parser_Enum) or_return
 	case "entry": tag.variant = parse_tag(lexer, XML_Parser_Entry) or_return
+	case "CDATA": tag.variant = parse_tag(lexer, XML_Parser_CDATA) or_return
 	case:
 		header: string
 
