@@ -394,7 +394,7 @@ output_write_interface :: proc(
 			}
 			proc_index_name_string: string
 
-			if _proc.name == "destroy" {
+			if _proc.type == "destructor" {
 				has_destroy_request = true
 			}
 
