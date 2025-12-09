@@ -1094,7 +1094,15 @@ output_write_interface :: proc(
 			}
 			io.write_string(writer, " :: enum u32 {\n") or_return
 			for entry := _enum.entry; entry != nil; entry = entry.next {
+				bitfield_value: int
 				entry_name: string
+
+				if _enum.bitfield == true {
+					bitfield_value = log2(entry.value) - 1
+					if bitfield_value < 0 {
+						continue
+					}
+				}
 
 				if entry.description != nil {
 					io.write_string(writer, "\t/*\n") or_return
@@ -1153,7 +1161,7 @@ output_write_interface :: proc(
 					io.write_int(writer, entry.value)
 				}
 				else {
-					io.write_int(writer, log2(entry.value) - 1)
+					io.write_int(writer, bitfield_value)
 				}
 				io.write_string(writer, ",\n") or_return
 			}
