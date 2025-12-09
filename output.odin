@@ -1153,7 +1153,7 @@ output_write_interface :: proc(
 					io.write_int(writer, entry.value)
 				}
 				else {
-					io.write_int(writer, log2(entry.value))
+					io.write_int(writer, log2(entry.value) - 1)
 				}
 				io.write_string(writer, ",\n") or_return
 			}
