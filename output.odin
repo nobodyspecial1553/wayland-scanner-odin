@@ -345,7 +345,7 @@ output_write_interface :: proc(
 			io.write_string(writer, interface_name) or_return
 			io.write_string(writer, "_listener, data: rawptr) -> (success: i32) {\n\treturn proxy_add_listener(cast(^proxy)") or_return
 			io.write_string(writer, interface_name) or_return
-			io.write_string(writer, ", cast(^rawptr)listener, data)\n}\n\n") or_return
+			io.write_string(writer, ", cast(^proc \"cdecl\" ())listener, data)\n}\n\n") or_return
 		}
 		else when T == ^XML_Parser_Request {
 			io.write_rune(writer, '\n') or_return
