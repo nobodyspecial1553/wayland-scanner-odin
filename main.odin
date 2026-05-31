@@ -3,7 +3,7 @@ package ns_wayland_scanner_odin
 @(require) import "core:fmt"
 @(require) import "core:log"
 @(require) import "core:mem"
-import os "core:os/os2"
+import "core:os"
 import "core:io"
 import "core:bufio"
 import "core:strings"
@@ -57,11 +57,11 @@ main :: proc() {
 		buffered_output_writer: bufio.Writer
 		buffered_output_stream: io.Writer
 
-		mem.scratch_init(&lexer_scratch, mem.Megabyte)
+		mem.scratch_init(&lexer_scratch, mem.Megabyte * 256)
 		lexer_scratch_allocator = mem.scratch_allocator(&lexer_scratch)
 		defer mem.scratch_destroy(&lexer_scratch)
 
-		mem.scratch_init(&parser_scratch, mem.Megabyte)
+		mem.scratch_init(&parser_scratch, mem.Megabyte * 256)
 		parser_scratch_allocator = mem.scratch_allocator(&parser_scratch)
 		defer mem.scratch_destroy(&parser_scratch)
 
@@ -72,6 +72,32 @@ main :: proc() {
 		args, args_allocator_error = parse_args(os.args, string_allocator)
 		if args_allocator_error != nil {
 			log.fatalf("Args Parsing Allocator Error: %v", args_allocator_error)
+		}
+
+		if .Is_Header in args.property_flags {
+			if .Is_Server not_in args.property_flags {
+				for dst_directory in args.file_path_in_array {
+					os_error: os.Error
+
+					os_error = headers_clone_client_files(dst_directory, lexer_scratch_allocator)
+					if os_error != nil {
+						fmt.eprintfln("Failed to clone client files to '%s': %v", dst_directory, os_error)
+						continue
+					}
+				}
+			}
+			else {
+				for dst_directory in args.file_path_in_array {
+					os_error: os.Error
+
+					os_error = headers_clone_server_files(dst_directory, lexer_scratch_allocator)
+					if os_error != nil {
+						fmt.eprintfln("Failed to clone server files to '%s': %v", dst_directory, os_error)
+						continue
+					}
+				}
+			}
+			return
 		}
 
 		output_file, output_file_open_error = os.open(args.file_path_out, { .Write, .Create, .Trunc }, os.Permissions_Read_Write_All)
@@ -141,6 +167,7 @@ main :: proc() {
 
 Args_Property :: enum {
 	Is_Server = 0,
+	Is_Header,
 	Generate_Proc_FFI,
 	Disable_Proc_Generation,
 	Generate_Interface_FFI,
@@ -204,6 +231,8 @@ parse_args :: proc(
 			args.property_flags -= { .Is_Server }
 		case "-server":
 			args.property_flags += { .Is_Server }
+		case "-header":
+			args.property_flags += { .Is_Header }
 		case "-disable-proc-generation":
 			args.property_flags += { .Disable_Proc_Generation }
 		case "-disable-interface-generation":
@@ -282,7 +311,9 @@ parse_args :: proc(
 }
 
 print_help :: proc() -> ! {
-	fmt.printfln(`Usage: %s [options] [-o output_file_path] <input file paths>
+	fmt.printfln(`Usage:
+	%s [options] [-o 'output file path'] <input file paths>
+	%s -header [-client | -server] <output directories>
 
 %s is a tool for generating odin code from wayland protocol xml files
 
@@ -290,13 +321,14 @@ print_help :: proc() -> ! {
 	-o <output_file_path>: Sets the output path
 	-client (default): Generates wayland client odin file
 	-server: Generates wayland server odin file
+	-header: Copies files with types, FFI and proxy procedures
 	-generate-proc-ffi:<foreign import name>=<odin-style link path>: Generates FFI for proxy procs instead of procs with bodies
 	-generate-proc-ffi-link-prefix=<link prefix>
 	-disable-proc-generation: Disables proc, listener and enum generation
 	-generate-interface-ffi:<foreign import name>=<odin-style link path>: Generates FFI for interface structures
 	-generate-interface-ffi-link-prefix=<link prefix>
 	-disable-interface-generation: Disables generation for interface structures
-	-h: Prints help message and exits`, os.args[0], os.args[0])
+	-h: Prints help message and exits`, os.args[0], os.args[0], os.args[0])
 
 	os.exit(0)
 }

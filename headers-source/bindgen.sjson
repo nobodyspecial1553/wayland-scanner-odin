@@ -1,0 +1,16 @@
+inputs = [
+	"./"
+]
+
+output_folder = "../headers/"
+
+package_name = "wayland_protocol"
+
+remove_type_prefix = "wl_"
+remove_type_suffix = "_t"
+remove_macro_prefix = "WL_"
+remove_function_prefix = "wl_"
+
+struct_field_overrides = {
+	"wl_message.types" = "[^]^interface"
+}
