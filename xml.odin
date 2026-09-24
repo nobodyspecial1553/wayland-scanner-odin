@@ -607,6 +607,7 @@ xml_parse_tag :: proc(
 
 					header = xml_parse_generate_print_header("Warning", attribute.name_location)
 					fmt.eprintfln("%s Ignoring unknown attribute: \"%s\"", header, attribute.name)
+					continue
 				}
 
 				//attribute_ptr = tag_ptr[struct_field.offset:]
