@@ -11,6 +11,8 @@ import big_math "core:math/big"
 
 log2 :: big_math.ilog2
 
+init_proc_body_builder: strings.Builder
+
 Output_Validation_Error :: enum {
 	None = 0,
 	Protocol_No_Name,
@@ -38,8 +40,9 @@ output_write_protocol :: proc(
 ) -> (
 	error: Output_Error,
 ) {
-	context.allocator = mem.panic_allocator()
 	context.temp_allocator = scratch_allocator
+
+	strings.builder_reset(&init_proc_body_builder)
 
 	if .Generate_Interface_FFI in args.property_flags || .Generate_Proc_FFI in args.property_flags {
 		if .Generate_Proc_FFI in args.property_flags {
@@ -78,6 +81,11 @@ output_write_protocol :: proc(
 	for interface := protocol.interface; interface != nil; interface = interface.next {
 		output_write_interface(writer, interface^, args, scratch_allocator) or_return
 	}
+
+	// Write init proc
+	io.write_string(writer, "@(init)\n@(private=\"file\")\n_init :: proc \"contextless\" () {\n")
+	io.write_string(writer, strings.to_string(init_proc_body_builder))
+	io.write_string(writer, "}")
 
 	return nil
 }
@@ -988,27 +996,33 @@ output_write_interface :: proc(
 			io.write_string(writer, "}\n\n") or_return
 		}
 		else {
-			io.write_string(writer, fmt.aprintf("%s_interface := interface {{\n\tname = \"%s\",\n\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
-			io.write_string(writer, "\tmethod_count = ") or_return
-			io.write_int(writer, method_count) or_return
-			io.write_string(writer, ",\n\tmethods = ") or_return
+			// Write object
+			io.write_string(writer, fmt.aprintf("%s_interface: interface\n\n", interface_name))
+
+			// Write init proc body
+			init_proc_body_writer := strings.to_writer(&init_proc_body_builder)
+
+			io.write_string(init_proc_body_writer, fmt.aprintf("\t%s_interface = interface {{\n\t\tname = \"%s\",\n\t\tversion = %d,\n", interface_name, interface.name, interface.version, allocator = scratch_allocator)) or_return
+			io.write_string(init_proc_body_writer, "\t\tmethod_count = ") or_return
+			io.write_int(init_proc_body_writer, method_count) or_return
+			io.write_string(init_proc_body_writer, ",\n\t\tmethods = ") or_return
 			if method_count <= 0 {
-				io.write_string(writer, "nil,\n") or_return
+				io.write_string(init_proc_body_writer, "nil,\n") or_return
 			}
 			else {
-				io.write_string(writer, fmt.aprintf("raw_data(&%s_requests),\n", interface.name, allocator = scratch_allocator)) or_return
+				io.write_string(init_proc_body_writer, fmt.aprintf("raw_data(&%s_requests),\n", interface.name, allocator = scratch_allocator)) or_return
 			}
-			io.write_string(writer, "\tevent_count = ") or_return
-			io.write_int(writer, event_count) or_return
-			io.write_string(writer, ",\n\tevents = ") or_return
+			io.write_string(init_proc_body_writer, "\t\tevent_count = ") or_return
+			io.write_int(init_proc_body_writer, event_count) or_return
+			io.write_string(init_proc_body_writer, ",\n\t\tevents = ") or_return
 			if event_count <= 0 {
-				io.write_string(writer, "nil,\n") or_return
+				io.write_string(init_proc_body_writer, "nil,\n") or_return
 			}
 			else {
-				io.write_string(writer, fmt.aprintf("raw_data(&%s_events),\n", interface.name, allocator = scratch_allocator)) or_return
+				io.write_string(init_proc_body_writer, fmt.aprintf("raw_data(&%s_events),\n", interface.name, allocator = scratch_allocator)) or_return
 			}
 
-			io.write_string(writer, "}\n\n") or_return
+			io.write_string(init_proc_body_writer, "\t}\n\n") or_return
 		}
 	}
 
